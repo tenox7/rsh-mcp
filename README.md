@@ -130,3 +130,8 @@ If you must set defaults, you can use environment variables:
 ### Misc
 
 If you need RSH/RCP server for Windows NT check out [NTRSHD](https://github.com/tenox7/ntrshd)
+
+
+### Illegal
+
+Written by Claude. Public domain.
