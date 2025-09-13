@@ -127,3 +127,6 @@ If you must set defaults, you can use environment variables:
 
 **Important:** Always specify the host and user explicitly in tool calls rather than relying on defaults. This ensures clarity about which machine you're connecting to and prevents accidental connections to wrong hosts.
 
+### Misc
+
+If you need RSH/RCP server for Windows NT check out [NTRSHD](https://github.com/tenox7/ntrshd)
