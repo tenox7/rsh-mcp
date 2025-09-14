@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func ReadFile(hostname, username, remotePath, port string) ([]byte, error) {
@@ -21,7 +22,8 @@ func ReadFile(hostname, username, remotePath, port string) ([]byte, error) {
 		username = currentUser.Username
 	}
 
-	conn, err := net.Dial("tcp", hostname+":"+port)
+	// Connect from privileged port (RCP protocol requirement)
+	conn, err := connectFromPrivilegedPort(hostname, port)
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +122,8 @@ func WriteFile(hostname, username, remotePath, port string, content []byte) erro
 		username = currentUser.Username
 	}
 
-	conn, err := net.Dial("tcp", hostname+":"+port)
+	// Connect from privileged port (RCP protocol requirement)
+	conn, err := connectFromPrivilegedPort(hostname, port)
 	if err != nil {
 		return err
 	}
@@ -197,4 +200,33 @@ func WriteFile(hostname, username, remotePath, port string, content []byte) erro
 	}
 
 	return nil
+}
+
+// connectFromPrivilegedPort connects to a remote host from a privileged port (512-1023)
+// This is required by the RCP protocol for authentication
+func connectFromPrivilegedPort(hostname, port string) (net.Conn, error) {
+	// Try to bind to a privileged port
+	for localPort := 1023; localPort >= 512; localPort-- {
+		localAddr, err := net.ResolveTCPAddr("tcp", fmt.Sprintf(":%d", localPort))
+		if err != nil {
+			continue
+		}
+
+		remoteAddr, err := net.ResolveTCPAddr("tcp", hostname+":"+port)
+		if err != nil {
+			return nil, err
+		}
+
+		dialer := &net.Dialer{
+			LocalAddr: localAddr,
+			Timeout:   30 * time.Second,
+		}
+
+		conn, err := dialer.Dial("tcp", remoteAddr.String())
+		if err == nil {
+			return conn, nil
+		}
+	}
+
+	return nil, fmt.Errorf("could not connect from privileged port (need root privileges to bind to ports 512-1023)")
 }

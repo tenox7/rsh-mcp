@@ -2,9 +2,11 @@ package rsh
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"os/user"
 	"strings"
+	"time"
 )
 
 func Execute(hostname, username, command, port string) ([]byte, error) {
@@ -16,7 +18,8 @@ func Execute(hostname, username, command, port string) ([]byte, error) {
 		username = currentUser.Username
 	}
 
-	conn, err := net.Dial("tcp", hostname+":"+port)
+	// Connect from privileged port (RSH protocol requirement)
+	conn, err := connectFromPrivilegedPort(hostname, port)
 	if err != nil {
 		return nil, err
 	}
@@ -73,4 +76,29 @@ func ParseUserHost(userHost string) (username, hostname string, err error) {
 	}
 
 	return username, hostname, nil
+}
+
+// connectFromPrivilegedPort connects to a remote host from a privileged port (512-1023)
+// This is required by the RSH protocol for authentication
+func connectFromPrivilegedPort(hostname, port string) (net.Conn, error) {
+	// Try to bind to a privileged port
+	for localPort := 1023; localPort >= 512; localPort-- {
+		localAddr, err := net.ResolveTCPAddr("tcp", fmt.Sprintf(":%d", localPort))
+		if err != nil {
+			continue
+		}
+
+		remoteAddr, err := net.ResolveTCPAddr("tcp", hostname+":"+port)
+		if err != nil {
+			return nil, err
+		}
+
+		conn, err := net.DialTCP("tcp", localAddr, remoteAddr)
+		if err == nil {
+			conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+			return conn, nil
+		}
+	}
+
+	return nil, fmt.Errorf("could not connect from privileged port (need appropriate privileges)")
 }
