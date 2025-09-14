@@ -30,6 +30,10 @@ claude mcp add rsh-mcp /path/to/rsh-mcp
 
 rsh-mcp provides read/write facility using `rcp` copy in/out. However this is not very effective for editing files. It's generally advised to make your agent write/edit/modify files locally then copy them over. Even better mount the workspace folder locally and remotely via NFS/SMB so the files can be edited in place.
 
+### Privileged port
+
+Some RCP/RSH servers require connections source port to be privileged range (<1024). This rsh/rcp client does that but on some OS'es it may require elevated privileges.
+
 ### Optional: Configuration with Default Settings
 
 You can override defaults if you want to always use the same username/target:
