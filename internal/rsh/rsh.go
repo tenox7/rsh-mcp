@@ -1,6 +1,7 @@
 package rsh
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"net"
@@ -9,7 +10,7 @@ import (
 	"time"
 )
 
-func Execute(hostname, username, command, port string) ([]byte, error) {
+func Execute(hostname, username, command, port string, maxLines, maxBytes int, tail bool) ([]byte, error) {
 	if username == "" {
 		currentUser, err := user.Current()
 		if err != nil {
@@ -44,17 +45,42 @@ func Execute(hostname, username, command, port string) ([]byte, error) {
 		return nil, err
 	}
 
+	if maxLines <= 0 {
+		maxLines = 1000
+	}
+	if maxBytes <= 0 {
+		maxBytes = 100000
+	}
+
 	var result []byte
 	buffer := make([]byte, 4096)
-	for {
+	for len(result) < maxBytes {
 		n, err := conn.Read(buffer)
 		if err != nil {
+			break
+		}
+		remaining := maxBytes - len(result)
+		if n > remaining {
+			result = append(result, buffer[:remaining]...)
 			break
 		}
 		result = append(result, buffer[:n]...)
 	}
 
-	return result, nil
+	if len(result) == 0 {
+		return result, nil
+	}
+
+	lines := bytes.Split(result, []byte{'\n'})
+	if len(lines) > maxLines {
+		if tail {
+			lines = lines[len(lines)-maxLines:]
+		} else {
+			lines = lines[:maxLines]
+		}
+	}
+
+	return bytes.Join(lines, []byte{'\n'}), nil
 }
 
 func ParseUserHost(userHost string) (username, hostname string, err error) {

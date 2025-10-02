@@ -10,10 +10,13 @@ import (
 )
 
 type ExecArgs struct {
-	Host    string `json:"host" jsonschema:"description:Remote hostname or IP address"`
-	User    string `json:"user,omitempty" jsonschema:"description:Remote username (optional, defaults to current user)"`
-	Command string `json:"command" jsonschema:"description:Command to execute on remote host"`
-	Port    string `json:"port,omitempty" jsonschema:"description:Port number (optional, defaults to 514),default:514"`
+	Host     string `json:"host" jsonschema:"description:Remote hostname or IP address"`
+	User     string `json:"user,omitempty" jsonschema:"description:Remote username (optional, defaults to current user)"`
+	Command  string `json:"command" jsonschema:"description:Command to execute on remote host"`
+	Port     string `json:"port,omitempty" jsonschema:"description:Port number (optional, defaults to 514),default:514"`
+	MaxLines int    `json:"max_lines,omitempty" jsonschema:"description:Maximum lines of output to return (optional, defaults to 1000),default:1000"`
+	MaxBytes int    `json:"max_bytes,omitempty" jsonschema:"description:Maximum bytes of output to return (optional, defaults to 100000),default:100000"`
+	Tail     bool   `json:"tail,omitempty" jsonschema:"description:Return last N lines instead of first N (optional),default:false"`
 }
 
 type ReadFileArgs struct {
@@ -44,8 +47,14 @@ func main() {
 		if args.Port == "" {
 			args.Port = "514"
 		}
+		if args.MaxLines <= 0 {
+			args.MaxLines = 1000
+		}
+		if args.MaxBytes <= 0 {
+			args.MaxBytes = 100000
+		}
 
-		output, err := rsh.Execute(args.Host, args.User, args.Command, args.Port)
+		output, err := rsh.Execute(args.Host, args.User, args.Command, args.Port, args.MaxLines, args.MaxBytes, args.Tail)
 		if err != nil {
 			return &mcp.CallToolResult{
 				IsError: true,
