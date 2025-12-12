@@ -1,63 +1,68 @@
-# RSH-MCP Server
+# rsh-mcp
 
-An MCP (Model Context Protocol) server that provides remote shell and file operations using the legacy RSH/RCP protocols for connecting to vintage computer systems.
+RSH/RCP MCP server. Execute commands and transfer files on remote hosts via RSH/RCP protocols for vintage systems.
 
-## Features
-
-- **exec**: Execute commands remotely via RSH protocol
-- **read**: Read files from remote hosts via RCP protocol
-- **write**: Write files to remote hosts via RCP protocol
-
-## Installation
-
-### Using go install
+## Install
 
 ```bash
 go install github.com/tenox7/rsh-mcp@latest
 ```
 
-This will install the `rsh-mcp` binary to your `$GOPATH/bin` directory (typically `~/go/bin`).
-
-## Claude Code Configuration
-
-Use the Claude Code CLI to add the MCP server:
+## Usage with Claude Code
 
 ```bash
-claude mcp add rsh-mcp /path/to/rsh-mcp
+claude mcp add rsh-mcp -- go run github.com/tenox7/rsh-mcp@latest
 ```
 
-### File editing consideration
+Or if installed:
 
-rsh-mcp provides read/write facility using `rcp` copy in/out. However this is not very effective for editing files. It's generally advised to make your agent write/edit/modify files locally then copy them over. Even better mount the workspace folder locally and remotely via NFS/SMB so the files can be edited in place.
-
-### Privileged port
-
-Some RCP/RSH servers require connections source port to be privileged range (<1024). This rsh/rcp client does that but on some OS'es it may require elevated privileges.
-
-### Optional: Configuration with Default Settings
-
-You can override defaults if you want to always use the same username/target:
-
-```json
-{
-  "mcpServers": {
-    "rsh-mcp": {
-      "command": "rsh-mcp",
-      "args": [],
-      "env": {
-        "RSH_DEFAULT_HOST": "192.168.1.100",
-        "RSH_DEFAULT_USER": "your_username",
-        "RSH_DEFAULT_PORT": "514"
-      }
-    }
-  }
-}
+```bash
+claude mcp add rsh-mcp $(go env GOPATH)/bin/rsh-mcp
 ```
 
-### Misc
+## Testing with Inspector
 
-If you need RSH/RCP server for Windows NT check out [NTRSHD](https://github.com/tenox7/ntrshd)
+```bash
+npx @modelcontextprotocol/inspector -- go run github.com/tenox7/rsh-mcp@latest
+```
 
-### Illegal
+## Tools
 
-Written by Claude. Public domain.
+### exec
+
+Execute a command on a remote host via RSH.
+
+- `host` - Remote hostname or IP address
+- `command` - Command to execute
+- `user` - Remote username (optional, defaults to current user)
+- `port` - Port number (optional, defaults to 514)
+- `max_lines` - Maximum lines of output (optional, defaults to 1000)
+- `max_bytes` - Maximum bytes of output (optional, defaults to 100000)
+- `tail` - Return last N lines instead of first N (optional)
+
+### read
+
+Read a file from a remote host via RCP.
+
+- `host` - Remote hostname or IP address
+- `path` - Path to remote file
+- `user` - Remote username (optional)
+- `port` - Port number (optional, defaults to 514)
+
+### write
+
+Write a file to a remote host via RCP.
+
+- `host` - Remote hostname or IP address
+- `path` - Path to remote file
+- `content` - Content to write
+- `user` - Remote username (optional)
+- `port` - Port number (optional, defaults to 514)
+
+## Notes
+
+**File editing:** rsh-mcp provides read/write via RCP copy in/out. For effective editing, work locally then copy over, or mount workspace via NFS/SMB.
+
+**Privileged port:** Some RSH/RCP servers require source port <1024. This client does that but may require elevated privileges on some systems.
+
+**Windows NT:** If you need an RSH/RCP server for Windows NT check out [NTRSHD](https://github.com/tenox7/ntrshd)
