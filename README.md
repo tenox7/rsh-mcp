@@ -2,22 +2,10 @@
 
 RSH/RCP MCP server. Execute commands and transfer files on remote hosts via RSH/RCP protocols for vintage systems.
 
-## Install
-
-```bash
-go install github.com/tenox7/rsh-mcp@latest
-```
-
 ## Usage with Claude Code
 
 ```bash
 claude mcp add rsh-mcp -- go run github.com/tenox7/rsh-mcp@latest
-```
-
-Or if installed:
-
-```bash
-claude mcp add rsh-mcp $(go env GOPATH)/bin/rsh-mcp
 ```
 
 ## Testing with Inspector
