@@ -4,229 +4,140 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	"io"
-	"net"
-	"os/user"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
+
+	"github.com/tenox7/rsh-mcp/internal/rcmd"
 )
 
 func ReadFile(hostname, username, remotePath, port string) ([]byte, error) {
+	localUser, err := rcmd.LocalUser()
+	if err != nil {
+		return nil, err
+	}
 	if username == "" {
-		currentUser, err := user.Current()
-		if err != nil {
-			return nil, err
-		}
-		username = currentUser.Username
+		username = localUser
 	}
 
-	// Connect from privileged port (RCP protocol requirement)
-	conn, err := connectFromPrivilegedPort(hostname, port)
+	conn, err := rcmd.Dial(hostname, port)
 	if err != nil {
 		return nil, err
 	}
 	defer conn.Close()
 
-	currentUser, err := user.Current()
+	err = rcmd.SendRequest(conn, localUser, username, "rcp -f "+remotePath)
 	if err != nil {
 		return nil, err
 	}
 
-	command := "rcp -f " + remotePath
-	data := []byte{0}
-	data = append(data, []byte(currentUser.Username)...)
-	data = append(data, 0)
-	data = append(data, []byte(username)...)
-	data = append(data, 0)
-	data = append(data, []byte(command)...)
-	data = append(data, 0)
+	r := bufio.NewReader(conn)
+	if err := rcmd.ReadAck(r); err != nil {
+		return nil, fmt.Errorf("rsh %s: %w", hostname, err)
+	}
 
-	_, err = conn.Write(data)
-	if err != nil {
+	// receiver announces readiness, source answers with one control
+	// line per file: Cmode size name
+	if _, err := conn.Write([]byte{0}); err != nil {
 		return nil, err
 	}
 
-	reader := bufio.NewReader(conn)
-
-	ack, err := reader.ReadByte()
+	line, err := r.ReadString('\n')
 	if err != nil {
-		return nil, fmt.Errorf("error reading initial response: %v", err)
+		return nil, fmt.Errorf("reading file info: %w", err)
 	}
-	if ack != 0 {
-		return nil, errors.New("remote file not found or access denied")
+	if line[0] == 1 || line[0] == 2 {
+		return nil, errors.New(strings.TrimSpace(line[1:]))
 	}
-
-	metadataLine, err := reader.ReadBytes('\n')
-	if err != nil {
-		return nil, fmt.Errorf("error reading file metadata: %v", err)
+	if line[0] != 'C' {
+		return nil, fmt.Errorf("unexpected rcp control message: %q", strings.TrimSpace(line))
 	}
 
-	metadataStr := strings.TrimSpace(string(metadataLine))
-	if !strings.HasPrefix(metadataStr, "C") {
-		return nil, fmt.Errorf("unexpected metadata format: %s", metadataStr)
-	}
-
-	parts := strings.SplitN(metadataStr[1:], " ", 3)
+	parts := strings.SplitN(strings.TrimSpace(line[1:]), " ", 3)
 	if len(parts) != 3 {
-		return nil, fmt.Errorf("invalid metadata format: %s", metadataStr)
+		return nil, fmt.Errorf("invalid file info: %q", strings.TrimSpace(line))
 	}
-
 	fileSize, err := strconv.ParseInt(parts[1], 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("error parsing file size: %v", err)
+		return nil, fmt.Errorf("parsing file size: %w", err)
 	}
 
-	_, err = conn.Write([]byte{0})
-	if err != nil {
-		return nil, fmt.Errorf("error sending metadata acknowledgement: %v", err)
+	if _, err := conn.Write([]byte{0}); err != nil {
+		return nil, err
 	}
 
-	var content []byte
-	buffer := make([]byte, 32*1024)
-	var totalReceived int64
-	for totalReceived < fileSize {
-		n, err := reader.Read(buffer)
-		if err != nil && err != io.EOF {
-			return nil, fmt.Errorf("error reading file content: %v", err)
-		}
-		if n > 0 {
-			content = append(content, buffer[:n]...)
-			totalReceived += int64(n)
-		}
-		if err == io.EOF {
-			break
+	content := make([]byte, fileSize)
+	received := 0
+	for received < len(content) {
+		n, err := r.Read(content[received:])
+		received += n
+		if err != nil {
+			return nil, fmt.Errorf("reading file data: %w", err)
 		}
 	}
 
-	endMarker, err := reader.ReadByte()
-	if err != nil || endMarker != 0 {
-		return nil, fmt.Errorf("unexpected end-of-file marker: %v", err)
+	if err := rcmd.ReadAck(r); err != nil {
+		return nil, fmt.Errorf("transfer failed: %w", err)
 	}
-
-	_, err = conn.Write([]byte{0})
-	if err != nil {
-		return nil, fmt.Errorf("error sending final acknowledgement: %v", err)
+	if _, err := conn.Write([]byte{0}); err != nil {
+		return nil, err
 	}
 
 	return content, nil
 }
 
 func WriteFile(hostname, username, remotePath, port string, content []byte) error {
+	localUser, err := rcmd.LocalUser()
+	if err != nil {
+		return err
+	}
 	if username == "" {
-		currentUser, err := user.Current()
-		if err != nil {
-			return err
-		}
-		username = currentUser.Username
+		username = localUser
 	}
 
-	// Connect from privileged port (RCP protocol requirement)
-	conn, err := connectFromPrivilegedPort(hostname, port)
+	conn, err := rcmd.Dial(hostname, port)
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
 
-	currentUser, err := user.Current()
+	err = rcmd.SendRequest(conn, localUser, username, "rcp -t "+remotePath)
 	if err != nil {
 		return err
 	}
 
-	command := "rcp -t " + remotePath
-	data := []byte{0}
-	data = append(data, []byte(currentUser.Username)...)
-	data = append(data, 0)
-	data = append(data, []byte(username)...)
-	data = append(data, 0)
-	data = append(data, []byte(command)...)
-	data = append(data, 0)
-
-	_, err = conn.Write(data)
-	if err != nil {
-		return fmt.Errorf("error sending command: %v", err)
+	r := bufio.NewReader(conn)
+	if err := rcmd.ReadAck(r); err != nil {
+		return fmt.Errorf("rsh %s: %w", hostname, err)
+	}
+	if err := rcmd.ReadAck(r); err != nil {
+		return fmt.Errorf("rcp: %w", err)
 	}
 
-	reader := bufio.NewReader(conn)
-
-	ack1, err := reader.ReadByte()
-	if err != nil || ack1 != 0 {
-		return fmt.Errorf("failed to receive first acknowledgement: %v", err)
+	fileInfo := fmt.Sprintf("C%04o %d %s\n", 0644, len(content), filepath.Base(remotePath))
+	if _, err := conn.Write([]byte(fileInfo)); err != nil {
+		return err
+	}
+	if err := rcmd.ReadAck(r); err != nil {
+		return fmt.Errorf("file info rejected: %w", err)
 	}
 
-	ack2, err := reader.ReadByte()
-	if err != nil || ack2 != 0 {
-		return fmt.Errorf("failed to receive second acknowledgement: %v", err)
+	if _, err := conn.Write(content); err != nil {
+		return err
+	}
+	if _, err := conn.Write([]byte{0}); err != nil {
+		return err
+	}
+	if err := rcmd.ReadAck(r); err != nil {
+		return fmt.Errorf("transfer failed: %w", err)
 	}
 
-	fileName := filepath.Base(remotePath)
-	fileMode := 0644
-	fileSize := len(content)
-	fileInfoStr := fmt.Sprintf("C%04o %d %s\n", fileMode, fileSize, fileName)
-	_, err = conn.Write([]byte(fileInfoStr))
-	if err != nil {
-		return fmt.Errorf("error sending file info: %v", err)
+	if _, err := conn.Write([]byte("E\n")); err != nil {
+		return err
 	}
-
-	ack, err := reader.ReadByte()
-	if err != nil || ack != 0 {
-		return fmt.Errorf("failed to receive file info acknowledgement: %v", err)
-	}
-
-	_, err = conn.Write(content)
-	if err != nil {
-		return fmt.Errorf("error sending file content: %v", err)
-	}
-
-	_, err = conn.Write([]byte{0})
-	if err != nil {
-		return fmt.Errorf("error sending end-of-file marker: %v", err)
-	}
-
-	ack, err = reader.ReadByte()
-	if err != nil || ack != 0 {
-		return fmt.Errorf("failed to receive final acknowledgement: %v", err)
-	}
-
-	_, err = conn.Write([]byte("E\n"))
-	if err != nil {
-		return fmt.Errorf("error sending end command: %v", err)
-	}
-
-	ack, err = reader.ReadByte()
-	if err != nil || ack != 0 {
-		return fmt.Errorf("failed to receive end acknowledgement: %v", err)
+	if err := rcmd.ReadAck(r); err != nil {
+		return fmt.Errorf("end of transfer rejected: %w", err)
 	}
 
 	return nil
-}
-
-// connectFromPrivilegedPort connects to a remote host from a privileged port (512-1023)
-// This is required by the RCP protocol for authentication
-func connectFromPrivilegedPort(hostname, port string) (net.Conn, error) {
-	// Try to bind to a privileged port
-	for localPort := 1023; localPort >= 512; localPort-- {
-		localAddr, err := net.ResolveTCPAddr("tcp", fmt.Sprintf(":%d", localPort))
-		if err != nil {
-			continue
-		}
-
-		remoteAddr, err := net.ResolveTCPAddr("tcp", hostname+":"+port)
-		if err != nil {
-			return nil, err
-		}
-
-		dialer := &net.Dialer{
-			LocalAddr: localAddr,
-			Timeout:   30 * time.Second,
-		}
-
-		conn, err := dialer.Dial("tcp", remoteAddr.String())
-		if err == nil {
-			return conn, nil
-		}
-	}
-
-	return nil, fmt.Errorf("could not connect from privileged port (need root privileges to bind to ports 512-1023)")
 }

@@ -1,48 +1,37 @@
 package rsh
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
-	"net"
-	"os/user"
 	"strings"
-	"time"
+
+	"github.com/tenox7/rsh-mcp/internal/rcmd"
 )
 
 func Execute(hostname, username, command, port string, maxLines, maxBytes int, tail bool) ([]byte, error) {
+	localUser, err := rcmd.LocalUser()
+	if err != nil {
+		return nil, err
+	}
 	if username == "" {
-		currentUser, err := user.Current()
-		if err != nil {
-			return nil, err
-		}
-		username = currentUser.Username
+		username = localUser
 	}
 
-	// Connect from privileged port (RSH protocol requirement)
-	conn, err := connectFromPrivilegedPort(hostname, port)
+	conn, err := rcmd.Dial(hostname, port)
 	if err != nil {
 		return nil, err
 	}
 	defer conn.Close()
 
-	currentUser, err := user.Current()
-	if err != nil {
+	if err := rcmd.SendRequest(conn, localUser, username, command); err != nil {
 		return nil, err
 	}
-	localUser := currentUser.Username
 
-	data := []byte{0}
-	data = append(data, []byte(localUser)...)
-	data = append(data, 0)
-	data = append(data, []byte(username)...)
-	data = append(data, 0)
-	data = append(data, []byte(command)...)
-	data = append(data, 0)
-
-	_, err = conn.Write(data)
-	if err != nil {
-		return nil, err
+	r := bufio.NewReader(conn)
+	if err := rcmd.ReadAck(r); err != nil {
+		return nil, fmt.Errorf("rsh %s: %w", hostname, err)
 	}
 
 	if maxLines <= 0 {
@@ -55,20 +44,14 @@ func Execute(hostname, username, command, port string, maxLines, maxBytes int, t
 	var result []byte
 	buffer := make([]byte, 4096)
 	for len(result) < maxBytes {
-		n, err := conn.Read(buffer)
+		n, err := r.Read(buffer)
+		if n > maxBytes-len(result) {
+			n = maxBytes - len(result)
+		}
+		result = append(result, buffer[:n]...)
 		if err != nil {
 			break
 		}
-		remaining := maxBytes - len(result)
-		if n > remaining {
-			result = append(result, buffer[:remaining]...)
-			break
-		}
-		result = append(result, buffer[:n]...)
-	}
-
-	if len(result) == 0 {
-		return result, nil
 	}
 
 	lines := bytes.Split(result, []byte{'\n'})
@@ -78,9 +61,10 @@ func Execute(hostname, username, command, port string, maxLines, maxBytes int, t
 		} else {
 			lines = lines[:maxLines]
 		}
+		return bytes.Join(lines, []byte{'\n'}), nil
 	}
 
-	return bytes.Join(lines, []byte{'\n'}), nil
+	return result, nil
 }
 
 func ParseUserHost(userHost string) (username, hostname string, err error) {
@@ -88,11 +72,10 @@ func ParseUserHost(userHost string) (username, hostname string, err error) {
 
 	switch len(parts) {
 	case 1:
-		currentUser, err := user.Current()
+		username, err = rcmd.LocalUser()
 		if err != nil {
 			return "", "", err
 		}
-		username = currentUser.Username
 		hostname = parts[0]
 	case 2:
 		username = parts[0]
@@ -102,29 +85,4 @@ func ParseUserHost(userHost string) (username, hostname string, err error) {
 	}
 
 	return username, hostname, nil
-}
-
-// connectFromPrivilegedPort connects to a remote host from a privileged port (512-1023)
-// This is required by the RSH protocol for authentication
-func connectFromPrivilegedPort(hostname, port string) (net.Conn, error) {
-	// Try to bind to a privileged port
-	for localPort := 1023; localPort >= 512; localPort-- {
-		localAddr, err := net.ResolveTCPAddr("tcp", fmt.Sprintf(":%d", localPort))
-		if err != nil {
-			continue
-		}
-
-		remoteAddr, err := net.ResolveTCPAddr("tcp", hostname+":"+port)
-		if err != nil {
-			return nil, err
-		}
-
-		conn, err := net.DialTCP("tcp", localAddr, remoteAddr)
-		if err == nil {
-			conn.SetReadDeadline(time.Now().Add(30 * time.Second))
-			return conn, nil
-		}
-	}
-
-	return nil, fmt.Errorf("could not connect from privileged port (need appropriate privileges)")
 }
