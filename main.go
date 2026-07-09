@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/tenox7/rsh-mcp/internal/rcmd"
 	"github.com/tenox7/rsh-mcp/internal/rcp"
 	"github.com/tenox7/rsh-mcp/internal/rsh"
 )
@@ -35,9 +37,12 @@ type WriteFileArgs struct {
 }
 
 func main() {
+	flag.DurationVar(&rcmd.IdleTimeout, "idle-timeout", rcmd.IdleTimeout, "close connection after this much remote silence")
+	flag.Parse()
+
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "rsh-mcp",
-		Version: "1.0.0",
+		Version: "1.0.1",
 	}, nil)
 
 	mcp.AddTool(server, &mcp.Tool{

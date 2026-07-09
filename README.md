@@ -47,6 +47,10 @@ Write a file to a remote host via RCP.
 - `user` - Remote username (optional)
 - `port` - Port number (optional, defaults to 514)
 
+## Flags
+
+- `-idle-timeout` - drop the connection after this much silence from the remote (default `5m`), e.g. `claude mcp add rsh-mcp -- go run github.com/tenox7/rsh-mcp@latest -idle-timeout 15m`
+
 ## Notes
 
 **File editing:** rsh-mcp provides read/write via RCP copy in/out. For effective editing, work locally then copy over, or mount workspace via NFS/SMB.

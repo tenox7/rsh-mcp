@@ -14,14 +14,14 @@ import (
 	"time"
 )
 
-const (
-	dialTimeout = 10 * time.Second
-	idleTimeout = 30 * time.Second
-)
+const dialTimeout = 10 * time.Second
+
+// IdleTimeout bounds silence from the remote, settable via -idle-timeout.
+var IdleTimeout = 5 * time.Minute
 
 // Dial prefers privileged source ports 512-1023 as rshd requires,
 // falling back to an ephemeral port if none can be bound. Reads on
-// the returned conn time out after idleTimeout of silence so MCP
+// the returned conn time out after IdleTimeout of silence so MCP
 // calls can not hang forever.
 func Dial(hostname, port string) (net.Conn, error) {
 	addr := net.JoinHostPort(hostname, port)
@@ -54,7 +54,7 @@ func portUnavailable(err error) bool {
 type idleConn struct{ net.Conn }
 
 func (c idleConn) Read(p []byte) (int, error) {
-	c.SetReadDeadline(time.Now().Add(idleTimeout))
+	c.SetReadDeadline(time.Now().Add(IdleTimeout))
 	return c.Conn.Read(p)
 }
 
