@@ -5,7 +5,7 @@ RSH/RCP MCP server. Execute commands and transfer files on remote hosts via RSH/
 ## Usage with Claude Code
 
 ```bash
-claude mcp add rsh-mcp -- go run github.com/tenox7/rsh-mcp@latest
+claude mcp add -s user rsh-mcp -- go run github.com/tenox7/rsh-mcp@latest
 ```
 
 ## Testing with Inspector
