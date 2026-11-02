@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"log"
+	"runtime/debug"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/tenox7/rsh-mcp/internal/rcmd"
@@ -36,13 +37,23 @@ type WriteFileArgs struct {
 	Port    string `json:"port,omitempty" jsonschema:"description:Port number (optional, defaults to 514),default:514"`
 }
 
+type VersionArgs struct{}
+
+func serverVersion() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok || info.Main.Version == "" {
+		return "unknown"
+	}
+	return info.Main.Version
+}
+
 func main() {
 	flag.DurationVar(&rcmd.IdleTimeout, "idle-timeout", rcmd.IdleTimeout, "close connection after this much remote silence")
 	flag.Parse()
 
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "rsh-mcp",
-		Version: "1.0.1",
+		Version: serverVersion(),
 	}, nil)
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -122,6 +133,21 @@ func main() {
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{Text: "File written successfully"},
+			},
+		}, nil, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "version",
+		Description: "Report the rsh-mcp server version and Go build info",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args VersionArgs) (*mcp.CallToolResult, any, error) {
+		text := "rsh-mcp " + serverVersion()
+		if info, ok := debug.ReadBuildInfo(); ok {
+			text += "\nmodule " + info.Path + "\n" + info.GoVersion
+		}
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: text},
 			},
 		}, nil, nil
 	})
