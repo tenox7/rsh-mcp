@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"net"
 	"os/user"
 	"strings"
@@ -16,30 +17,63 @@ import (
 
 const dialTimeout = 10 * time.Second
 
+// maxDialAttempts bounds how many reserved source ports we actually try
+// to connect through before giving up, so an unreachable host fails in
+// reasonable time instead of walking all 512 ports.
+const maxDialAttempts = 4
+
 // IdleTimeout bounds silence from the remote, settable via -idle-timeout.
 var IdleTimeout = 5 * time.Minute
 
-// Dial prefers privileged source ports 512-1023 as rshd requires,
-// falling back to an ephemeral port if none can be bound. Reads on
-// the returned conn time out after IdleTimeout of silence so MCP
-// calls can not hang forever.
+// Dial connects to rshd from a privileged source port (512-1023), as
+// the protocol requires. It tries those ports in a random order and
+// moves on whenever one will not bind or its connection does not come
+// up, so many sessions at once and quick reconnects do not all pile
+// onto the same port and collide in TIME_WAIT. (The old fixed
+// 1023->512 scan always reused the same high port, which timed out on
+// reconnect and could not run sessions concurrently.) If no reserved
+// port works it falls back to an ephemeral port. Reads on the returned
+// conn time out after IdleTimeout of silence so MCP calls can not hang
+// forever.
 func Dial(hostname, port string) (net.Conn, error) {
 	addr := net.JoinHostPort(hostname, port)
 	d := net.Dialer{Timeout: dialTimeout}
-	for p := 1023; p >= 512; p-- {
-		d.LocalAddr = &net.TCPAddr{Port: p}
+
+	attempts := 0
+	var lastErr error
+	for _, off := range rand.Perm(1024 - 512) {
+		d.LocalAddr = &net.TCPAddr{Port: 512 + off}
 		conn, err := d.Dial("tcp", addr)
 		if err == nil {
 			return idleConn{conn}, nil
 		}
+		lastErr = err
 		if portUnavailable(err) {
+			// Could not bind this reserved port (busy, or not
+			// permitted here); another one is free to try at no cost.
 			continue
 		}
-		return nil, err
+		// The connection itself did not come up. That can be a
+		// TIME_WAIT 4-tuple clash (seen as a timeout) or a reserved
+		// source port that momentarily collided with another session
+		// (seen as a refusal); either way a different source port
+		// usually works, so try a few more before giving up. A host
+		// that is genuinely down refuses each one instantly, so we
+		// still stop quickly after maxDialAttempts.
+		attempts++
+		if attempts >= maxDialAttempts {
+			return nil, err
+		}
 	}
+
+	// No reserved port worked (e.g. not permitted to bind them here);
+	// fall back to an ephemeral port so the client still functions.
 	d.LocalAddr = nil
 	conn, err := d.Dial("tcp", addr)
 	if err != nil {
+		if lastErr != nil {
+			return nil, fmt.Errorf("no reserved source port available (%v); ephemeral port also failed: %w", lastErr, err)
+		}
 		return nil, err
 	}
 	return idleConn{conn}, nil
