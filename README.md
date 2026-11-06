@@ -18,15 +18,44 @@ npx @modelcontextprotocol/inspector -- go run github.com/tenox7/rsh-mcp@latest
 
 ### exec
 
-Execute a command on a remote host via RSH.
+Execute a command on a remote host via RSH. Returns its output (stdout and stderr) and its exit status.
 
 - `host` - Remote hostname or IP address
-- `command` - Command to execute
+- `command` - Command to execute; it may have several lines
 - `user` - Remote username (optional, defaults to current user)
 - `port` - Port number (optional, defaults to 514)
+- `shell` - `sh` (default) or `login` (optional, see below)
+- `timeout` - Seconds before the call returns the output so far (optional); the command may go on running
+- `grep` - Return only the lines that match this regular expression, Go syntax (optional)
 - `max_lines` - Maximum lines of output (optional, defaults to 1000)
 - `max_bytes` - Maximum bytes of output (optional, defaults to 100000)
 - `tail` - Return last N lines instead of first N (optional)
+
+With `shell` `sh`, the command is sent as a script to `/bin/sh` on its standard input, so the login shell (sh, ksh, csh) never parses it. Quotes, `!`, comments and here-documents work the same everywhere, the command reads `/dev/null` as its input, and the exit status comes back. `login` passes the command to the login shell as it is, with no exit status: use it for hosts without `/bin/sh`, such as Windows NT.
+
+`grep` filters here, not on the remote host, so it works with old tools and saves output.
+
+### download
+
+Copy files from a remote host to a local folder via RCP: many at once, binary files too.
+
+- `host` - Remote hostname or IP address
+- `paths` - Remote files; `*` and `?` work as in the remote shell
+- `to` - Local folder (absolute path), made if missing
+- `recursive` - Copy folders with everything in them (optional)
+- `user` - Remote username (optional)
+- `port` - Port number (optional, defaults to 514)
+
+### upload
+
+Copy local files to a remote host via RCP: many at once, binary files too. File modes are kept.
+
+- `host` - Remote hostname or IP address
+- `paths` - Local files (absolute paths); folders need `recursive`
+- `to` - Remote folder; for one file it may also be the new file name
+- `recursive` - Copy folders with everything in them (optional)
+- `user` - Remote username (optional)
+- `port` - Port number (optional, defaults to 514)
 
 ### read
 
@@ -53,7 +82,7 @@ Write a file to a remote host via RCP.
 
 ## Notes
 
-**File editing:** rsh-mcp provides read/write via RCP copy in/out. For effective editing, work locally then copy over, or mount workspace via NFS/SMB.
+**File editing:** rsh-mcp provides read/write via RCP copy in/out. For effective editing, work locally then copy over with upload, or mount workspace via NFS/SMB.
 
 **Privileged port:** Some RSH/RCP servers require source port <1024. This client does that but may require elevated privileges on some systems.
 
