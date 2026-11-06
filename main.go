@@ -20,7 +20,7 @@ type ExecArgs struct {
 	User     string `json:"user,omitempty" jsonschema:"description:Remote username (optional, defaults to current user)"`
 	Command  string `json:"command" jsonschema:"description:Command to execute on remote host. It may have several lines"`
 	Port     string `json:"port,omitempty" jsonschema:"description:Port number (optional, defaults to 514),default:514"`
-	Shell    string `json:"shell,omitempty" jsonschema:"description:sh (default) runs the command under /bin/sh whatever the login shell is and returns its exit status; login hands it to the login shell as it is with no exit status (for Windows NT rshd)"`
+	Shell    string `json:"shell,omitempty" jsonschema:"description:sh (default) runs the command under /bin/sh whatever the login shell is and returns its exit status; on Windows NT that needs ntrshd 1.2 or later. login hands it to the login shell as it is with no exit status (for other systems without /bin/sh)"`
 	Timeout  int    `json:"timeout,omitempty" jsonschema:"description:Seconds after which the call stops waiting and returns the output so far (optional). The command may go on running"`
 	Grep     string `json:"grep,omitempty" jsonschema:"description:Return only the lines that match this regular expression (Go syntax). Filtered here so old remote tools don't matter (optional)"`
 	MaxLines int    `json:"max_lines,omitempty" jsonschema:"description:Maximum lines of output to return (optional, defaults to 1000),default:1000"`

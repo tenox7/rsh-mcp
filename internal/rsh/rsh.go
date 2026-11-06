@@ -20,6 +20,12 @@ import (
 
 const maxCapture = 32 << 20
 
+// scriptCommand starts /bin/sh on the script. ntrshd 1.2 and later on
+// Windows NT know the rsh-mcp-1 tag and run the script's command with cmd.
+const scriptCommand = "sh -s rsh-mcp-1"
+
+const cmdExeNotFound = "internal or external command"
+
 type Options struct {
 	Host     string
 	User     string
@@ -67,7 +73,7 @@ func Execute(ctx context.Context, o Options) (*Result, error) {
 	viaSh := o.Shell != "login"
 	command := o.Command
 	if viaSh {
-		command = "sh"
+		command = scriptCommand
 	}
 	if err := rcmd.SendRequest(conn, localUser, o.User, command); err != nil {
 		return nil, err
@@ -90,10 +96,15 @@ func Execute(ctx context.Context, o Options) (*Result, error) {
 	if ctx.Err() != nil {
 		return nil, errors.New("cancelled")
 	}
+	output = bytes.ReplaceAll(output, []byte("\r\n"), []byte("\n"))
 
 	res := &Result{ExitStatus: ExitUnknown, TimedOut: timedOut}
 	if viaSh {
 		output, res.ExitStatus = cutMarker(output, marker)
+	}
+	if viaSh && res.ExitStatus == ExitUnknown && !timedOut && bytes.Contains(output, []byte(cmdExeNotFound)) {
+		return nil, fmt.Errorf("%s has no sh: it answered like Windows NT's cmd.exe, so the command did not run. "+
+			"Run ntrshd 1.2 or later there (github.com/tenox7/ntrshd), or use shell \"login\" (no exit status)", o.Host)
 	}
 	res.Output, res.Lines, res.Matched, res.Shown, res.Cut = limit(output, grep, o.MaxLines, o.MaxBytes, o.Tail)
 	return res, nil
@@ -101,9 +112,10 @@ func Execute(ctx context.Context, o Options) (*Result, error) {
 
 // The command runs in a subshell of /bin/sh that reads this script from
 // stdin, so the login shell (sh, ksh, csh) never parses it: quotes, !,
-// comments and newlines all work, and the exit status comes back.
+// comments and newlines all work, and the exit status comes back. shift
+// drops the tag that scriptCommand gives sh.
 func script(command, marker string) string {
-	return "(\n" + command + "\n) </dev/null 2>&1\necho " + marker + "$?__\nexit\n"
+	return "shift\n(\n" + command + "\n) </dev/null 2>&1\necho " + marker + "$?__\nexit\n"
 }
 
 func newMarker() string {
