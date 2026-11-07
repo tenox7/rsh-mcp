@@ -81,6 +81,7 @@ Write a file to a remote host via RCP.
 ## Flags
 
 - `-idle-timeout` - drop the connection after this much silence from the remote (default `5m`), e.g. `claude mcp add rsh-mcp -- go run github.com/tenox7/rsh-mcp@latest -idle-timeout 15m`
+- `-log-dir` - append one line per operation to `rsh_transfers.log` in this folder (also `RSH_LOG_DIR`; off by default): time, tool, host, port, users, command or paths, bytes, SHA-256 (of the output, the content, or each copied file), exit status, duration and any error
 
 ## Notes
 
