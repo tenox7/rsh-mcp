@@ -26,11 +26,40 @@ type Report struct {
 	Errors []string
 }
 
-func Download(ctx context.Context, hostname, username, port string, paths []string, localDir string, recursive bool) (*Report, error) {
+// Download copies remote files into localDir. With login (a remote
+// without /bin/sh, such as OpenVMS) paths are sent as given and each one
+// gets its own rcp session, since OpenVMS rcp takes one source per
+// command; wildcards within a path still work.
+func Download(ctx context.Context, hostname, username, port string, paths []string, localDir string, recursive, login bool) (*Report, error) {
+	if !login || len(paths) == 1 {
+		return download(ctx, hostname, username, port, paths, localDir, recursive, login)
+	}
+	all := &Report{}
+	for _, p := range paths {
+		rep, err := download(ctx, hostname, username, port, []string{p}, localDir, recursive, login)
+		merge(all, rep, p, err)
+		if ctx.Err() != nil {
+			return all, errors.New("cancelled")
+		}
+	}
+	return all, nil
+}
+
+func merge(all, rep *Report, path string, err error) {
+	if rep != nil {
+		all.Files = append(all.Files, rep.Files...)
+		all.Errors = append(all.Errors, rep.Errors...)
+	}
+	if err != nil {
+		all.Errors = append(all.Errors, path+": "+err.Error())
+	}
+}
+
+func download(ctx context.Context, hostname, username, port string, paths []string, localDir string, recursive, login bool) (*Report, error) {
 	if err := os.MkdirAll(localDir, 0755); err != nil {
 		return nil, err
 	}
-	command := "rcp -f " + flag(recursive, "-r ") + quoteAll(paths)
+	command := "rcp -f " + flag(recursive, "-r ") + quoteAll(paths, login)
 	conn, r, err := open(hostname, username, port, command)
 	if err != nil {
 		return nil, err
@@ -110,7 +139,49 @@ func receive(conn net.Conn, r *bufio.Reader, path string, mode os.FileMode, size
 	return ack(conn)
 }
 
-func Upload(ctx context.Context, hostname, username, port string, paths []string, remoteTarget string, recursive bool) (*Report, error) {
+// Upload copies local files to remoteTarget. With login (a remote without
+// /bin/sh, such as OpenVMS) the target is sent as given and each file gets
+// its own rcp session with its full target name, since OpenVMS rcp rejects
+// "rcp -t -d" as an ambiguous target. Folders can not be copied that way.
+func Upload(ctx context.Context, hostname, username, port string, paths []string, remoteTarget string, recursive, login bool) (*Report, error) {
+	if !login {
+		return upload(ctx, hostname, username, port, paths, remoteTarget, recursive, false)
+	}
+	toDir := len(paths) > 1 || strings.ContainsAny(remoteTarget[len(remoteTarget)-1:], "/]>:")
+	all := &Report{}
+	for _, p := range paths {
+		st, err := os.Stat(p)
+		if err != nil {
+			return nil, err
+		}
+		if st.IsDir() {
+			return nil, fmt.Errorf("%s is a folder: folders can not be copied with shell login", p)
+		}
+	}
+	for _, p := range paths {
+		target := remoteTarget
+		if toDir {
+			target = join(remoteTarget, filepath.Base(p))
+		}
+		rep, err := upload(ctx, hostname, username, port, []string{p}, target, false, true)
+		merge(all, rep, p, err)
+		if ctx.Err() != nil {
+			return all, errors.New("cancelled")
+		}
+	}
+	return all, nil
+}
+
+// join adds a file name to a remote folder: DKA0:[DIR] and DEV: take it as
+// they are, a Unix-style folder after a slash.
+func join(dir, name string) string {
+	if strings.ContainsAny(dir[len(dir)-1:], "/]>:") {
+		return dir + name
+	}
+	return dir + "/" + name
+}
+
+func upload(ctx context.Context, hostname, username, port string, paths []string, remoteTarget string, recursive, login bool) (*Report, error) {
 	toDir := len(paths) > 1
 	for _, p := range paths {
 		st, err := os.Stat(p)
@@ -122,7 +193,7 @@ func Upload(ctx context.Context, hostname, username, port string, paths []string
 		}
 		toDir = toDir || st.IsDir()
 	}
-	command := "rcp -t " + flag(toDir, "-d ") + flag(recursive, "-r ") + quote(remoteTarget)
+	command := "rcp -t " + flag(toDir, "-d ") + flag(recursive, "-r ") + quote(remoteTarget, login)
 	conn, r, err := open(hostname, username, port, command)
 	if err != nil {
 		return nil, err
@@ -270,17 +341,17 @@ func flag(on bool, f string) string {
 
 var plainPath = regexp.MustCompile(`^[A-Za-z0-9_./*?~+,:=@%-]+$`)
 
-func quote(path string) string {
-	if plainPath.MatchString(path) {
+func quote(path string, login bool) string {
+	if login || plainPath.MatchString(path) {
 		return path
 	}
 	return "'" + strings.ReplaceAll(path, "'", `'\''`) + "'"
 }
 
-func quoteAll(paths []string) string {
+func quoteAll(paths []string, login bool) string {
 	quoted := make([]string, len(paths))
 	for i, p := range paths {
-		quoted[i] = quote(p)
+		quoted[i] = quote(p, login)
 	}
 	return strings.Join(quoted, " ")
 }
