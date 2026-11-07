@@ -89,3 +89,7 @@ Write a file to a remote host via RCP.
 **Privileged port:** Some RSH/RCP servers require source port <1024. This client does that but may require elevated privileges on some systems.
 
 **Windows NT:** If you need an RSH/RCP server for Windows NT check out [NTRSHD](https://github.com/tenox7/ntrshd)
+
+## License
+
+MIT, see [LICENSE](LICENSE).
