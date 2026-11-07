@@ -47,6 +47,7 @@ Copy files from a remote host to a local folder via RCP: many at once, binary fi
 - `recursive` - Copy folders with everything in them (optional)
 - `user` - Remote username (optional)
 - `port` - Port number (optional, defaults to 514)
+- `shell` - `sh` (default) or `login` for remotes without `/bin/sh` (optional, see below)
 
 ### upload
 
@@ -58,6 +59,9 @@ Copy local files to a remote host via RCP: many at once, binary files too. File 
 - `recursive` - Copy folders with everything in them (optional)
 - `user` - Remote username (optional)
 - `port` - Port number (optional, defaults to 514)
+- `shell` - `sh` (default) or `login` for remotes without `/bin/sh` (optional, see below)
+
+With `shell` `login` (OpenVMS and other remotes without `/bin/sh`) remote paths are sent exactly as given, so a file spec like `SYS$SYSDEVICE:[DIR]FILE.TXT;1` is not quoted for a Unix shell, and each path or file gets its own rcp session: OpenVMS rcp takes only one source per command and rejects the multi-file upload form. A `to` ending in `]`, `>`, `:` or `/` is a folder, and each file's name is added to it. Folders can not be uploaded this way.
 
 ### read
 

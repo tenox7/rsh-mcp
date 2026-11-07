@@ -49,6 +49,7 @@ type DownloadArgs struct {
 	Paths     []string `json:"paths" jsonschema:"description:Remote files to copy. * and ? work as in the remote shell"`
 	To        string   `json:"to" jsonschema:"description:Local folder to copy them into (an absolute path; made if missing)"`
 	Recursive bool     `json:"recursive,omitempty" jsonschema:"description:Copy folders with everything in them (optional)"`
+	Shell     string   `json:"shell,omitempty" jsonschema:"description:sh (default) quotes unusual remote paths for /bin/sh. login sends them as given, one rcp session per path, for remotes without /bin/sh such as OpenVMS"`
 	Port      string   `json:"port,omitempty" jsonschema:"description:Port number (optional, defaults to 514),default:514"`
 }
 
@@ -58,6 +59,7 @@ type UploadArgs struct {
 	Paths     []string `json:"paths" jsonschema:"description:Local files to copy (absolute paths). Folders need recursive"`
 	To        string   `json:"to" jsonschema:"description:Remote folder to copy them into. For one file it may also be the new file name"`
 	Recursive bool     `json:"recursive,omitempty" jsonschema:"description:Copy folders with everything in them (optional)"`
+	Shell     string   `json:"shell,omitempty" jsonschema:"description:sh (default) quotes unusual remote paths for /bin/sh. login sends them as given, one rcp session per path, for remotes without /bin/sh such as OpenVMS"`
 	Port      string   `json:"port,omitempty" jsonschema:"description:Port number (optional, defaults to 514),default:514"`
 }
 
@@ -213,7 +215,7 @@ func main() {
 			return textResult("download needs paths and to", true), nil, nil
 		}
 
-		rep, err := rcp.Download(ctx, args.Host, args.User, args.Port, args.Paths, args.To, args.Recursive)
+		rep, err := rcp.Download(ctx, args.Host, args.User, args.Port, args.Paths, args.To, args.Recursive, args.Shell == "login")
 		return copyResult("download", "downloaded", rep, err), nil, nil
 	})
 
@@ -228,7 +230,7 @@ func main() {
 			return textResult("upload needs paths and to", true), nil, nil
 		}
 
-		rep, err := rcp.Upload(ctx, args.Host, args.User, args.Port, args.Paths, args.To, args.Recursive)
+		rep, err := rcp.Upload(ctx, args.Host, args.User, args.Port, args.Paths, args.To, args.Recursive, args.Shell == "login")
 		return copyResult("upload", "uploaded", rep, err), nil, nil
 	})
 
