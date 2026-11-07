@@ -23,7 +23,7 @@ Execute a command on a remote host via RSH. Returns its output (stdout and stder
 - `host` - Remote hostname or IP address
 - `command` - Command to execute; it may have several lines
 - `user` - Remote username (optional, defaults to current user)
-- `port` - Port number (optional, defaults to 514)
+- `port` - Port number, as a string or a number (optional, defaults to 514)
 - `shell` - `sh` (default) or `login` (optional, see below)
 - `timeout` - Seconds before the call returns the output so far (optional); the command may go on running
 - `grep` - Return only the lines that match this regular expression, Go syntax (optional)
@@ -46,7 +46,7 @@ Copy files from a remote host to a local folder via RCP: many at once, binary fi
 - `to` - Local folder (absolute path), made if missing
 - `recursive` - Copy folders with everything in them (optional)
 - `user` - Remote username (optional)
-- `port` - Port number (optional, defaults to 514)
+- `port` - Port number, as a string or a number (optional, defaults to 514)
 
 ### upload
 
@@ -57,7 +57,7 @@ Copy local files to a remote host via RCP: many at once, binary files too. File 
 - `to` - Remote folder; for one file it may also be the new file name
 - `recursive` - Copy folders with everything in them (optional)
 - `user` - Remote username (optional)
-- `port` - Port number (optional, defaults to 514)
+- `port` - Port number, as a string or a number (optional, defaults to 514)
 
 ### read
 
@@ -66,7 +66,7 @@ Read a file from a remote host via RCP.
 - `host` - Remote hostname or IP address
 - `path` - Path to remote file
 - `user` - Remote username (optional)
-- `port` - Port number (optional, defaults to 514)
+- `port` - Port number, as a string or a number (optional, defaults to 514)
 
 ### write
 
@@ -76,7 +76,7 @@ Write a file to a remote host via RCP.
 - `path` - Path to remote file
 - `content` - Content to write
 - `user` - Remote username (optional)
-- `port` - Port number (optional, defaults to 514)
+- `port` - Port number, as a string or a number (optional, defaults to 514)
 
 ## Flags
 
