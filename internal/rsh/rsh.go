@@ -27,16 +27,17 @@ const scriptCommand = "sh -s rsh-mcp-1"
 const cmdExeNotFound = "internal or external command"
 
 type Options struct {
-	Host     string
-	User     string
-	Port     string
-	Command  string
-	Shell    string
-	Timeout  time.Duration
-	Grep     string
-	MaxLines int
-	MaxBytes int
-	Tail     bool
+	Host      string
+	User      string
+	LocalUser string
+	Port      string
+	Command   string
+	Shell     string
+	Timeout   time.Duration
+	Grep      string
+	MaxLines  int
+	MaxBytes  int
+	Tail      bool
 }
 
 type Result struct {
@@ -56,9 +57,12 @@ func Execute(ctx context.Context, o Options) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	localUser, err := rcmd.LocalUser()
-	if err != nil {
-		return nil, err
+	localUser := o.LocalUser
+	if localUser == "" {
+		localUser, err = rcmd.LocalUser()
+		if err != nil {
+			return nil, err
+		}
 	}
 	if o.User == "" {
 		o.User = localUser
