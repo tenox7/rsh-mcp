@@ -9,7 +9,9 @@ import (
 	"io"
 	"math/rand"
 	"net"
+	"os"
 	"os/user"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -24,6 +26,15 @@ const maxDialAttempts = 4
 
 // IdleTimeout bounds silence from the remote, settable via -idle-timeout.
 var IdleTimeout = 5 * time.Minute
+
+// RequirePrivilegedPort makes Dial fail, rather than fall back to an
+// unprivileged source port, when it may not bind a reserved one.
+// Settable via -require-privileged-port or RSH_REQUIRE_PRIVPORT=1.
+var RequirePrivilegedPort, _ = strconv.ParseBool(os.Getenv("RSH_REQUIRE_PRIVPORT"))
+
+// ErrNoResponse is what most rshd servers give a client that is not on a
+// reserved source port: they close the connection without a word.
+var ErrNoResponse = errors.New("server closed connection without response (source port or host rejected?)")
 
 // Dial connects to rshd from a privileged source port (512-1023), as
 // the protocol requires. It tries those ports in a random order and
@@ -40,17 +51,19 @@ func Dial(hostname, port string) (net.Conn, error) {
 	d := net.Dialer{Timeout: dialTimeout}
 
 	attempts := 0
+	denied := false
 	var lastErr error
 	for _, off := range rand.Perm(1024 - 512) {
 		d.LocalAddr = &net.TCPAddr{Port: 512 + off}
 		conn, err := d.Dial("tcp", addr)
 		if err == nil {
-			return idleConn{conn}, nil
+			return idleConn{conn, false}, nil
 		}
 		lastErr = err
 		if portUnavailable(err) {
 			// Could not bind this reserved port (busy, or not
 			// permitted here); another one is free to try at no cost.
+			denied = denied || !errors.Is(err, syscall.EADDRINUSE)
 			continue
 		}
 		// The connection itself did not come up. That can be a
@@ -67,7 +80,11 @@ func Dial(hostname, port string) (net.Conn, error) {
 	}
 
 	// No reserved port worked (e.g. not permitted to bind them here);
-	// fall back to an ephemeral port so the client still functions.
+	// fall back to an ephemeral port so the client still functions,
+	// unless told not to.
+	if denied && RequirePrivilegedPort {
+		return nil, fmt.Errorf("may not bind a reserved source port (%v); %s", lastErr, setcapHint())
+	}
 	d.LocalAddr = nil
 	conn, err := d.Dial("tcp", addr)
 	if err != nil {
@@ -76,7 +93,16 @@ func Dial(hostname, port string) (net.Conn, error) {
 		}
 		return nil, err
 	}
-	return idleConn{conn}, nil
+	return idleConn{conn, true}, nil
+}
+
+func setcapHint() string {
+	bin, err := os.Executable()
+	if err != nil {
+		bin = "rsh-mcp"
+	}
+	return "give the binary the right to bind ports below 1024 with: sudo setcap cap_net_bind_service=+ep " + bin +
+		" (or make install; go run and go build make a new binary without it)"
 }
 
 func portUnavailable(err error) bool {
@@ -85,7 +111,10 @@ func portUnavailable(err error) bool {
 		errors.Is(err, syscall.EPERM)
 }
 
-type idleConn struct{ net.Conn }
+type idleConn struct {
+	net.Conn
+	unprivileged bool
+}
 
 func (c idleConn) Read(p []byte) (int, error) {
 	c.SetReadDeadline(time.Now().Add(IdleTimeout))
@@ -100,12 +129,31 @@ func SendRequest(conn net.Conn, localUser, remoteUser, command string) error {
 	return err
 }
 
+// ReadAnswer reads rshd's answer to the request. When rshd hung up on a
+// connection from an unprivileged source port it says why and what to do.
+func ReadAnswer(conn net.Conn, r *bufio.Reader) error {
+	err := ReadAck(r)
+	c, ok := conn.(idleConn)
+	if !ok || !c.unprivileged || !errors.Is(err, ErrNoResponse) {
+		return err
+	}
+	return fmt.Errorf("%w: this connection came from unprivileged port %s, as no reserved port could be bound; %s",
+		err, portOf(c.LocalAddr()), setcapHint())
+}
+
+func portOf(a net.Addr) string {
+	if t, ok := a.(*net.TCPAddr); ok {
+		return strconv.Itoa(t.Port)
+	}
+	return a.String()
+}
+
 // ReadAck reads one rcmd status byte: 0 is success, anything else is
 // followed by an error message line.
 func ReadAck(r *bufio.Reader) error {
 	b, err := r.ReadByte()
 	if err == io.EOF {
-		return errors.New("server closed connection without response (source port or host rejected?)")
+		return ErrNoResponse
 	}
 	if err != nil {
 		return err
