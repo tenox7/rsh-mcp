@@ -26,12 +26,12 @@ type Report struct {
 	Errors []string
 }
 
-func Download(ctx context.Context, hostname, username, port string, paths []string, localDir string, recursive bool) (*Report, error) {
+func Download(ctx context.Context, hostname, username, localUser, port string, paths []string, localDir string, recursive bool) (*Report, error) {
 	if err := os.MkdirAll(localDir, 0755); err != nil {
 		return nil, err
 	}
 	command := "rcp -f " + flag(recursive, "-r ") + quoteAll(paths)
-	conn, r, err := open(hostname, username, port, command)
+	conn, r, err := open(hostname, username, localUser, port, command)
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +110,7 @@ func receive(conn net.Conn, r *bufio.Reader, path string, mode os.FileMode, size
 	return ack(conn)
 }
 
-func Upload(ctx context.Context, hostname, username, port string, paths []string, remoteTarget string, recursive bool) (*Report, error) {
+func Upload(ctx context.Context, hostname, username, localUser, port string, paths []string, remoteTarget string, recursive bool) (*Report, error) {
 	toDir := len(paths) > 1
 	for _, p := range paths {
 		st, err := os.Stat(p)
@@ -123,7 +123,7 @@ func Upload(ctx context.Context, hostname, username, port string, paths []string
 		toDir = toDir || st.IsDir()
 	}
 	command := "rcp -t " + flag(toDir, "-d ") + flag(recursive, "-r ") + quote(remoteTarget)
-	conn, r, err := open(hostname, username, port, command)
+	conn, r, err := open(hostname, username, localUser, port, command)
 	if err != nil {
 		return nil, err
 	}
@@ -205,13 +205,10 @@ func sendDir(conn net.Conn, r *bufio.Reader, path string, st os.FileInfo, rep *R
 	return rcmd.ReadAck(r)
 }
 
-func open(hostname, username, port, command string) (net.Conn, *bufio.Reader, error) {
-	localUser, err := rcmd.LocalUser()
+func open(hostname, username, localUser, port, command string) (net.Conn, *bufio.Reader, error) {
+	username, localUser, err := users(username, localUser)
 	if err != nil {
 		return nil, nil, err
-	}
-	if username == "" {
-		username = localUser
 	}
 	conn, err := rcmd.Dial(hostname, port)
 	if err != nil {

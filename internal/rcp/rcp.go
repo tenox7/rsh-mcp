@@ -11,13 +11,10 @@ import (
 	"github.com/tenox7/rsh-mcp/internal/rcmd"
 )
 
-func ReadFile(hostname, username, remotePath, port string) ([]byte, error) {
-	localUser, err := rcmd.LocalUser()
+func ReadFile(hostname, username, localUser, remotePath, port string) ([]byte, error) {
+	username, localUser, err := users(username, localUser)
 	if err != nil {
 		return nil, err
-	}
-	if username == "" {
-		username = localUser
 	}
 
 	conn, err := rcmd.Dial(hostname, port)
@@ -86,13 +83,10 @@ func ReadFile(hostname, username, remotePath, port string) ([]byte, error) {
 	return content, nil
 }
 
-func WriteFile(hostname, username, remotePath, port string, content []byte) error {
-	localUser, err := rcmd.LocalUser()
+func WriteFile(hostname, username, localUser, remotePath, port string, content []byte) error {
+	username, localUser, err := users(username, localUser)
 	if err != nil {
 		return err
-	}
-	if username == "" {
-		username = localUser
 	}
 
 	conn, err := rcmd.Dial(hostname, port)
@@ -140,4 +134,20 @@ func WriteFile(hostname, username, remotePath, port string, content []byte) erro
 	}
 
 	return nil
+}
+
+// users fills in the local user (the current one) and the remote user
+// (the local one) when they are not given.
+func users(username, localUser string) (string, string, error) {
+	if localUser == "" {
+		u, err := rcmd.LocalUser()
+		if err != nil {
+			return "", "", err
+		}
+		localUser = u
+	}
+	if username == "" {
+		username = localUser
+	}
+	return username, localUser, nil
 }
