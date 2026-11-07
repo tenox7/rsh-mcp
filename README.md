@@ -65,6 +65,7 @@ Read a file from a remote host via RCP.
 
 - `host` - Remote hostname or IP address
 - `path` - Path to remote file
+- `encoding` - `text` (default) or `base64` (optional). `text` fails on a file that is not UTF-8 rather than return it damaged; `base64` returns any file, binary too
 - `user` - Remote username (optional)
 - `port` - Port number (optional, defaults to 514)
 
@@ -74,7 +75,9 @@ Write a file to a remote host via RCP.
 
 - `host` - Remote hostname or IP address
 - `path` - Path to remote file
-- `content` - Content to write
+- `content` - Text to write
+- `content_base64` - Binary content to write, base64 encoded, instead of `content`
+- `mode` - Octal file mode, e.g. `0755` (optional, defaults to `0644`)
 - `user` - Remote username (optional)
 - `port` - Port number (optional, defaults to 514)
 

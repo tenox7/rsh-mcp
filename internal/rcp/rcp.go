@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -86,7 +87,7 @@ func ReadFile(hostname, username, remotePath, port string) ([]byte, error) {
 	return content, nil
 }
 
-func WriteFile(hostname, username, remotePath, port string, content []byte) error {
+func WriteFile(hostname, username, remotePath, port string, content []byte, mode os.FileMode) error {
 	localUser, err := rcmd.LocalUser()
 	if err != nil {
 		return err
@@ -114,7 +115,7 @@ func WriteFile(hostname, username, remotePath, port string, content []byte) erro
 		return fmt.Errorf("rcp: %w", err)
 	}
 
-	fileInfo := fmt.Sprintf("C%04o %d %s\n", 0644, len(content), filepath.Base(remotePath))
+	fileInfo := fmt.Sprintf("C%04o %d %s\n", mode.Perm(), len(content), filepath.Base(remotePath))
 	if _, err := conn.Write([]byte(fileInfo)); err != nil {
 		return err
 	}
