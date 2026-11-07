@@ -32,7 +32,7 @@ func ReadFile(hostname, username, remotePath, port string) ([]byte, error) {
 	}
 
 	r := bufio.NewReader(conn)
-	if err := rcmd.ReadAck(r); err != nil {
+	if err := rcmd.ReadAnswer(conn, r); err != nil {
 		return nil, fmt.Errorf("rsh %s: %w", hostname, err)
 	}
 
@@ -107,7 +107,7 @@ func WriteFile(hostname, username, remotePath, port string, content []byte) erro
 	}
 
 	r := bufio.NewReader(conn)
-	if err := rcmd.ReadAck(r); err != nil {
+	if err := rcmd.ReadAnswer(conn, r); err != nil {
 		return fmt.Errorf("rsh %s: %w", hostname, err)
 	}
 	if err := rcmd.ReadAck(r); err != nil {

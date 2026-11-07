@@ -222,7 +222,7 @@ func open(hostname, username, port, command string) (net.Conn, *bufio.Reader, er
 		return nil, nil, err
 	}
 	r := bufio.NewReader(conn)
-	if err := rcmd.ReadAck(r); err != nil {
+	if err := rcmd.ReadAnswer(conn, r); err != nil {
 		conn.Close()
 		return nil, nil, fmt.Errorf("rsh %s: %w", hostname, err)
 	}

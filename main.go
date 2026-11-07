@@ -133,6 +133,7 @@ func copyResult(tool, verb string, rep *rcp.Report, err error) *mcp.CallToolResu
 
 func main() {
 	flag.DurationVar(&rcmd.IdleTimeout, "idle-timeout", rcmd.IdleTimeout, "close connection after this much remote silence")
+	flag.BoolVar(&rcmd.RequirePrivilegedPort, "require-privileged-port", rcmd.RequirePrivilegedPort, "fail when no reserved source port can be bound, instead of using an unprivileged one (or RSH_REQUIRE_PRIVPORT=1)")
 	flag.Parse()
 
 	server := mcp.NewServer(&mcp.Implementation{

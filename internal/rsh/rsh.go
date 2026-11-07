@@ -79,7 +79,7 @@ func Execute(ctx context.Context, o Options) (*Result, error) {
 		return nil, err
 	}
 	r := bufio.NewReader(conn)
-	if err := rcmd.ReadAck(r); err != nil {
+	if err := rcmd.ReadAnswer(conn, r); err != nil {
 		return nil, fmt.Errorf("rsh %s: %w", o.Host, err)
 	}
 
