@@ -30,7 +30,7 @@ func Download(ctx context.Context, hostname, username, port string, paths []stri
 	if err := os.MkdirAll(localDir, 0755); err != nil {
 		return nil, err
 	}
-	command := "rcp -f " + flag(recursive, "-r ") + quoteAll(paths)
+	command := sourceCommand(paths, recursive)
 	conn, r, err := open(hostname, username, port, command)
 	if err != nil {
 		return nil, err
@@ -122,7 +122,7 @@ func Upload(ctx context.Context, hostname, username, port string, paths []string
 		}
 		toDir = toDir || st.IsDir()
 	}
-	command := "rcp -t " + flag(toDir, "-d ") + flag(recursive, "-r ") + quote(remoteTarget)
+	command := sinkCommand(remoteTarget, toDir, recursive)
 	conn, r, err := open(hostname, username, port, command)
 	if err != nil {
 		return nil, err
@@ -259,6 +259,14 @@ func cancelled(ctx context.Context, err error) error {
 		return errors.New("cancelled")
 	}
 	return err
+}
+
+func sourceCommand(paths []string, recursive bool) string {
+	return "rcp " + flag(recursive, "-r ") + "-f " + quoteAll(paths)
+}
+
+func sinkCommand(target string, toDir, recursive bool) string {
+	return "rcp " + flag(recursive, "-r ") + flag(toDir, "-d ") + "-t " + quote(target)
 }
 
 func flag(on bool, f string) string {
