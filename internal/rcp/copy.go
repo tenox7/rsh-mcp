@@ -55,6 +55,9 @@ func Download(ctx context.Context, hostname, username, port string, paths []stri
 		case 1:
 			rep.Errors = append(rep.Errors, strings.TrimSpace(line[1:]))
 			continue
+		case '%':
+			rep.Errors = append(rep.Errors, strings.TrimSpace(line))
+			continue
 		case 2:
 			return rep, errors.New(strings.TrimSpace(line[1:]))
 		case 'T':
