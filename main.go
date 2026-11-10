@@ -121,7 +121,8 @@ func copyText(verb string, rep *rcp.Report) string {
 }
 
 func copyResult(tool, verb string, rep *rcp.Report, err error) *mcp.CallToolResult {
-	if rep == nil {
+	nothingDone := rep == nil || len(rep.Files)+len(rep.Errors) == 0
+	if err != nil && nothingDone {
 		return textResult("RCP "+tool+" failed: "+err.Error(), true)
 	}
 	text := copyText(verb, rep)

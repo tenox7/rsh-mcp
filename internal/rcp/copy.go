@@ -26,37 +26,50 @@ type Report struct {
 	Errors []string
 }
 
+// Download asks for each path on a connection of its own, as rcp does:
+// an NT rshd takes the whole rest of the command line as one path.
 func Download(ctx context.Context, hostname, username, port string, paths []string, localDir string, recursive bool) (*Report, error) {
 	if err := os.MkdirAll(localDir, 0755); err != nil {
 		return nil, err
 	}
-	command := sourceCommand(paths, recursive)
+	rep := &Report{}
+	for _, path := range paths {
+		if ctx.Err() != nil {
+			return rep, errCancelled
+		}
+		if err := fetch(ctx, hostname, username, port, sourceCommand(path, recursive), localDir, rep); err != nil {
+			return rep, err
+		}
+	}
+	return rep, nil
+}
+
+func fetch(ctx context.Context, hostname, username, port, command, localDir string, rep *Report) error {
 	conn, r, err := open(hostname, username, port, command)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer conn.Close()
 	defer context.AfterFunc(ctx, func() { conn.Close() })()
 
-	rep := &Report{}
 	dirs := []string{localDir}
 	if err := ack(conn); err != nil {
-		return rep, err
+		return err
 	}
 	for {
 		line, err := r.ReadString('\n')
 		if err == io.EOF && line == "" {
-			return rep, nil
+			return nil
 		}
 		if err != nil {
-			return rep, cancelled(ctx, err)
+			return cancelled(ctx, err)
 		}
 		switch line[0] {
 		case 1:
 			rep.Errors = append(rep.Errors, strings.TrimSpace(line[1:]))
 			continue
 		case 2:
-			return rep, errors.New(strings.TrimSpace(line[1:]))
+			return errors.New(strings.TrimSpace(line[1:]))
 		case 'T':
 		case 'E':
 			if len(dirs) > 1 {
@@ -65,29 +78,29 @@ func Download(ctx context.Context, hostname, username, port string, paths []stri
 		case 'D':
 			mode, _, name, err := parseControl(line)
 			if err != nil {
-				return rep, err
+				return err
 			}
 			dir := filepath.Join(dirs[len(dirs)-1], name)
 			if err := os.MkdirAll(dir, mode|0700); err != nil {
-				return rep, err
+				return err
 			}
 			dirs = append(dirs, dir)
 		case 'C':
 			mode, size, name, err := parseControl(line)
 			if err != nil {
-				return rep, err
+				return err
 			}
 			path := filepath.Join(dirs[len(dirs)-1], name)
 			if err := receive(conn, r, path, mode, size); err != nil {
-				return rep, cancelled(ctx, err)
+				return cancelled(ctx, err)
 			}
 			rep.Files = append(rep.Files, Copied{path, size})
 			continue
 		default:
-			return rep, fmt.Errorf("unexpected rcp message: %q", strings.TrimSpace(line))
+			return fmt.Errorf("unexpected rcp message: %q", strings.TrimSpace(line))
 		}
 		if err := ack(conn); err != nil {
-			return rep, err
+			return err
 		}
 	}
 }
@@ -254,15 +267,17 @@ func ack(conn net.Conn) error {
 	return err
 }
 
+var errCancelled = errors.New("cancelled")
+
 func cancelled(ctx context.Context, err error) error {
 	if ctx.Err() != nil {
-		return errors.New("cancelled")
+		return errCancelled
 	}
 	return err
 }
 
-func sourceCommand(paths []string, recursive bool) string {
-	return "rcp " + flag(recursive, "-r ") + "-f " + quoteAll(paths)
+func sourceCommand(path string, recursive bool) string {
+	return "rcp " + flag(recursive, "-r ") + "-f " + quote(path)
 }
 
 func sinkCommand(target string, toDir, recursive bool) string {
@@ -278,17 +293,12 @@ func flag(on bool, f string) string {
 
 var plainPath = regexp.MustCompile(`^[A-Za-z0-9_./*?~+,:=@%-]+$`)
 
+// Windows paths go as they are: an NT rshd has no shell to take quotes off.
+var windowsPath = regexp.MustCompile(`^[A-Za-z]:|\\`)
+
 func quote(path string) string {
-	if plainPath.MatchString(path) {
+	if plainPath.MatchString(path) || windowsPath.MatchString(path) {
 		return path
 	}
 	return "'" + strings.ReplaceAll(path, "'", `'\''`) + "'"
-}
-
-func quoteAll(paths []string) string {
-	quoted := make([]string, len(paths))
-	for i, p := range paths {
-		quoted[i] = quote(p)
-	}
-	return strings.Join(quoted, " ")
 }
