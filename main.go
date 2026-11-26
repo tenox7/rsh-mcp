@@ -2,13 +2,16 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"flag"
 	"fmt"
 	"log"
+	"os"
 	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/tenox7/rsh-mcp/internal/rcmd"
@@ -30,18 +33,21 @@ type ExecArgs struct {
 }
 
 type ReadFileArgs struct {
-	Host string `json:"host" jsonschema:"description:Remote hostname or IP address"`
-	User string `json:"user,omitempty" jsonschema:"description:Remote username (optional, defaults to current user)"`
-	Path string `json:"path" jsonschema:"description:Path to remote file to read"`
-	Port any    `json:"port,omitempty" jsonschema:"description:Port number as a string or a number (optional, defaults to 514),default:514"`
+	Host     string `json:"host" jsonschema:"description:Remote hostname or IP address"`
+	User     string `json:"user,omitempty" jsonschema:"description:Remote username (optional, defaults to current user)"`
+	Path     string `json:"path" jsonschema:"description:Path to remote file to read"`
+	Port     any    `json:"port,omitempty" jsonschema:"description:Port number as a string or a number (optional, defaults to 514),default:514"`
+	Encoding string `json:"encoding,omitempty" jsonschema:"description:text (default) returns the file as text and fails if it is not UTF-8. base64 returns any file, binary too, base64 encoded"`
 }
 
 type WriteFileArgs struct {
-	Host    string `json:"host" jsonschema:"description:Remote hostname or IP address"`
-	User    string `json:"user,omitempty" jsonschema:"description:Remote username (optional, defaults to current user)"`
-	Path    string `json:"path" jsonschema:"description:Path to remote file to write"`
-	Content string `json:"content" jsonschema:"description:Content to write to the file"`
-	Port    any    `json:"port,omitempty" jsonschema:"description:Port number as a string or a number (optional, defaults to 514),default:514"`
+	Host          string `json:"host" jsonschema:"description:Remote hostname or IP address"`
+	User          string `json:"user,omitempty" jsonschema:"description:Remote username (optional, defaults to current user)"`
+	Path          string `json:"path" jsonschema:"description:Path to remote file to write"`
+	Content       string `json:"content,omitempty" jsonschema:"description:Text to write to the file"`
+	ContentBase64 string `json:"content_base64,omitempty" jsonschema:"description:Binary content to write, base64 encoded, instead of content"`
+	Mode          string `json:"mode,omitempty" jsonschema:"description:Octal file mode on the remote, e.g. 0755 (optional, defaults to 0644)"`
+	Port          any    `json:"port,omitempty" jsonschema:"description:Port number as a string or a number (optional, defaults to 514),default:514"`
 }
 
 type DownloadArgs struct {
@@ -204,9 +210,19 @@ func newServer() *mcp.Server {
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args ReadFileArgs) (*mcp.CallToolResult, any, error) {
 		port := portString(args.Port)
 
+		if args.Encoding != "" && args.Encoding != "text" && args.Encoding != "base64" {
+			return textResult("encoding must be text or base64", true), nil, nil
+		}
+
 		content, err := rcp.ReadFile(args.Host, args.User, args.Path, port)
 		if err != nil {
 			return textResult("RCP read failed: "+err.Error(), true), nil, nil
+		}
+		if args.Encoding == "base64" {
+			return textResult(base64.StdEncoding.EncodeToString(content), false), nil, nil
+		}
+		if !utf8.Valid(content) {
+			return textResult(fmt.Sprintf("%s is not UTF-8 text (%d bytes): read it with encoding base64", args.Path, len(content)), true), nil, nil
 		}
 		return textResult(string(content), false), nil, nil
 	})
@@ -217,11 +233,29 @@ func newServer() *mcp.Server {
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args WriteFileArgs) (*mcp.CallToolResult, any, error) {
 		port := portString(args.Port)
 
-		err := rcp.WriteFile(args.Host, args.User, args.Path, port, []byte(args.Content))
+		content := []byte(args.Content)
+		if args.ContentBase64 != "" {
+			if args.Content != "" {
+				return textResult("give content or content_base64, not both", true), nil, nil
+			}
+			var err error
+			if content, err = base64.StdEncoding.DecodeString(args.ContentBase64); err != nil {
+				return textResult("content_base64: "+err.Error(), true), nil, nil
+			}
+		}
+		mode := uint64(0644)
+		if args.Mode != "" {
+			var err error
+			if mode, err = strconv.ParseUint(args.Mode, 8, 32); err != nil || mode > 0777 {
+				return textResult("mode must be octal, e.g. 0644", true), nil, nil
+			}
+		}
+
+		err := rcp.WriteFile(args.Host, args.User, args.Path, port, content, os.FileMode(mode))
 		if err != nil {
 			return textResult("RCP write failed: "+err.Error(), true), nil, nil
 		}
-		return textResult("File written successfully", false), nil, nil
+		return textResult(fmt.Sprintf("File written successfully, %d bytes", len(content)), false), nil, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{

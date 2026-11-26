@@ -42,7 +42,7 @@ func TestWriteFileVMSError(t *testing.T) {
 	port, _ := fakeRshd(t, func(_ rcmdRequest, r *bufio.Reader, conn net.Conn) {
 		io.WriteString(conn, "%RCP-E-OPENOUT, error opening [NODIR]A.TXT as output\n")
 	})
-	err := WriteFile("127.0.0.1", "u", "[NODIR]A.TXT", port, []byte("a"))
+	err := WriteFile("127.0.0.1", "u", "[NODIR]A.TXT", port, []byte("a"), 0644)
 	if err == nil || !strings.Contains(err.Error(), "%RCP-E-OPENOUT") {
 		t.Errorf("error %v, want the OpenVMS message", err)
 	}
