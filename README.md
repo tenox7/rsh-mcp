@@ -20,9 +20,10 @@ npx @modelcontextprotocol/inspector -- go run github.com/tenox7/rsh-mcp@latest
 
 Execute a command on a remote host via RSH. Returns its output (stdout and stderr) and its exit status.
 
-- `host` - Remote hostname or IP address
+- `host` - Remote hostname or IP address (optional if `RSH_HOST` is set)
 - `command` - Command to execute; it may have several lines
-- `user` - Remote username (optional, defaults to current user)
+- `user` - Remote username (optional)
+- `local_user` - Local username sent to the remote, which must trust it (optional)
 - `port` - Port number, as a string or a number (optional, defaults to 514)
 - `shell` - `sh` (default) or `login` (optional, see below)
 - `timeout` - Seconds before the call returns the output so far (optional); the command may go on running
@@ -41,11 +42,12 @@ Output comes back with plain newlines: CR LF line ends become LF, as do the CR C
 
 Copy files from a remote host to a local folder via RCP: many at once, binary files too.
 
-- `host` - Remote hostname or IP address
+- `host` - Remote hostname or IP address (optional if `RSH_HOST` is set)
 - `paths` - Remote files; `*` and `?` work as in the remote shell
 - `to` - Local folder (absolute path), made if missing
 - `recursive` - Copy folders with everything in them (optional)
 - `user` - Remote username (optional)
+- `local_user` - Local username sent to the remote (optional)
 - `port` - Port number, as a string or a number (optional, defaults to 514)
 - `shell` - `sh` (default) or `login` for remotes without `/bin/sh` (optional, see below)
 
@@ -53,11 +55,12 @@ Copy files from a remote host to a local folder via RCP: many at once, binary fi
 
 Copy local files to a remote host via RCP: many at once, binary files too. File modes are kept.
 
-- `host` - Remote hostname or IP address
+- `host` - Remote hostname or IP address (optional if `RSH_HOST` is set)
 - `paths` - Local files (absolute paths); folders need `recursive`
 - `to` - Remote folder; for one file it may also be the new file name
 - `recursive` - Copy folders with everything in them (optional)
 - `user` - Remote username (optional)
+- `local_user` - Local username sent to the remote (optional)
 - `port` - Port number, as a string or a number (optional, defaults to 514)
 - `shell` - `sh` (default) or `login` for remotes without `/bin/sh` (optional, see below)
 
@@ -67,28 +70,42 @@ With `shell` `login` (OpenVMS and other remotes without `/bin/sh`) remote paths 
 
 Read a file from a remote host via RCP.
 
-- `host` - Remote hostname or IP address
+- `host` - Remote hostname or IP address (optional if `RSH_HOST` is set)
 - `path` - Path to remote file
 - `encoding` - `text` (default) or `base64` (optional). `text` fails on a file that is not UTF-8 rather than return it damaged; `base64` returns any file, binary too
 - `user` - Remote username (optional)
+- `local_user` - Local username sent to the remote (optional)
 - `port` - Port number, as a string or a number (optional, defaults to 514)
 
 ### write
 
 Write a file to a remote host via RCP.
 
-- `host` - Remote hostname or IP address
+- `host` - Remote hostname or IP address (optional if `RSH_HOST` is set)
 - `path` - Path to remote file
 - `content` - Text to write
 - `content_base64` - Binary content to write, base64 encoded, instead of `content`
 - `mode` - Octal file mode, e.g. `0755` (optional, defaults to `0644`)
 - `user` - Remote username (optional)
+- `local_user` - Local username sent to the remote (optional)
 - `port` - Port number, as a string or a number (optional, defaults to 514)
 
 ## Flags
 
 - `-idle-timeout` - drop the connection after this much silence from the remote (default `5m`), e.g. `claude mcp add rsh-mcp -- go run github.com/tenox7/rsh-mcp@latest -idle-timeout 15m`
 - `-require-privileged-port` - fail at once when no source port below 1024 can be bound, instead of trying an unprivileged one (also `RSH_REQUIRE_PRIVPORT=1`)
+
+## Environment
+
+Each of these, when set, is the default for the argument of the same meaning, so one server entry can be pointed at one host. Arguments given in a call still win.
+
+- `RSH_HOST` - `host`
+- `RSH_PORT` - `port`
+- `RSH_USER` - `user`
+- `RSH_LOCAL_USER` - `local_user`, the name the remote host's `.rhosts`, `hosts.equiv` or proxy entry must trust
+- `RSH_SHELL` - `shell` of `exec`, `download`, and `upload`
+
+For example `claude mcp add -s user -e RSH_HOST=oldbox -e RSH_USER=guest rsh-oldbox -- go run github.com/tenox7/rsh-mcp@latest`
 
 ## Notes
 

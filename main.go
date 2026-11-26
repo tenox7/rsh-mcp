@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -20,9 +21,10 @@ import (
 )
 
 type ExecArgs struct {
-	Host     string `json:"host" jsonschema:"description:Remote hostname or IP address"`
-	User     string `json:"user,omitempty" jsonschema:"description:Remote username (optional, defaults to current user)"`
-	Command  string `json:"command" jsonschema:"description:Command to execute on remote host. It may have several lines"`
+	Host      string `json:"host,omitempty" jsonschema:"description:Remote hostname or IP address (optional if RSH_HOST is set)"`
+	User      string `json:"user,omitempty" jsonschema:"description:Remote username (optional, defaults to RSH_USER, else the local username)"`
+	LocalUser string `json:"local_user,omitempty" jsonschema:"description:Local username sent to the remote, which must trust it (optional, defaults to RSH_LOCAL_USER, else the current user)"`
+	Command   string `json:"command" jsonschema:"description:Command to execute on remote host. It may have several lines"`
 	Port     any    `json:"port,omitempty" jsonschema:"description:Port number as a string or a number (optional, defaults to 514),default:514"`
 	Shell    string `json:"shell,omitempty" jsonschema:"description:sh (default) runs the command under /bin/sh whatever the login shell is and returns its exit status; on Windows NT that needs ntrshd 1.2 or later. login hands it to the login shell as it is with no exit status (for other systems without /bin/sh)"`
 	Timeout  int    `json:"timeout,omitempty" jsonschema:"description:Seconds after which the call stops waiting and returns the output so far (optional). The command may go on running"`
@@ -33,16 +35,18 @@ type ExecArgs struct {
 }
 
 type ReadFileArgs struct {
-	Host     string `json:"host" jsonschema:"description:Remote hostname or IP address"`
-	User     string `json:"user,omitempty" jsonschema:"description:Remote username (optional, defaults to current user)"`
-	Path     string `json:"path" jsonschema:"description:Path to remote file to read"`
+	Host      string `json:"host,omitempty" jsonschema:"description:Remote hostname or IP address (optional if RSH_HOST is set)"`
+	User      string `json:"user,omitempty" jsonschema:"description:Remote username (optional, defaults to RSH_USER, else the local username)"`
+	LocalUser string `json:"local_user,omitempty" jsonschema:"description:Local username sent to the remote, which must trust it (optional, defaults to RSH_LOCAL_USER, else the current user)"`
+	Path      string `json:"path" jsonschema:"description:Path to remote file to read"`
 	Port     any    `json:"port,omitempty" jsonschema:"description:Port number as a string or a number (optional, defaults to 514),default:514"`
 	Encoding string `json:"encoding,omitempty" jsonschema:"description:text (default) returns the file as text and fails if it is not UTF-8. base64 returns any file, binary too, base64 encoded"`
 }
 
 type WriteFileArgs struct {
-	Host          string `json:"host" jsonschema:"description:Remote hostname or IP address"`
-	User          string `json:"user,omitempty" jsonschema:"description:Remote username (optional, defaults to current user)"`
+	Host          string `json:"host,omitempty" jsonschema:"description:Remote hostname or IP address (optional if RSH_HOST is set)"`
+	User          string `json:"user,omitempty" jsonschema:"description:Remote username (optional, defaults to RSH_USER, else the local username)"`
+	LocalUser     string `json:"local_user,omitempty" jsonschema:"description:Local username sent to the remote, which must trust it (optional, defaults to RSH_LOCAL_USER, else the current user)"`
 	Path          string `json:"path" jsonschema:"description:Path to remote file to write"`
 	Content       string `json:"content,omitempty" jsonschema:"description:Text to write to the file"`
 	ContentBase64 string `json:"content_base64,omitempty" jsonschema:"description:Binary content to write, base64 encoded, instead of content"`
@@ -51,8 +55,9 @@ type WriteFileArgs struct {
 }
 
 type DownloadArgs struct {
-	Host      string   `json:"host" jsonschema:"description:Remote hostname or IP address"`
-	User      string   `json:"user,omitempty" jsonschema:"description:Remote username (optional, defaults to current user)"`
+	Host      string   `json:"host,omitempty" jsonschema:"description:Remote hostname or IP address (optional if RSH_HOST is set)"`
+	User      string   `json:"user,omitempty" jsonschema:"description:Remote username (optional, defaults to RSH_USER, else the local username)"`
+	LocalUser string   `json:"local_user,omitempty" jsonschema:"description:Local username sent to the remote, which must trust it (optional, defaults to RSH_LOCAL_USER, else the current user)"`
 	Paths     []string `json:"paths" jsonschema:"description:Remote files to copy. * and ? work as in the remote shell"`
 	To        string   `json:"to" jsonschema:"description:Local folder to copy them into (an absolute path; made if missing)"`
 	Recursive bool     `json:"recursive,omitempty" jsonschema:"description:Copy folders with everything in them (optional)"`
@@ -61,8 +66,9 @@ type DownloadArgs struct {
 }
 
 type UploadArgs struct {
-	Host      string   `json:"host" jsonschema:"description:Remote hostname or IP address"`
-	User      string   `json:"user,omitempty" jsonschema:"description:Remote username (optional, defaults to current user)"`
+	Host      string   `json:"host,omitempty" jsonschema:"description:Remote hostname or IP address (optional if RSH_HOST is set)"`
+	User      string   `json:"user,omitempty" jsonschema:"description:Remote username (optional, defaults to RSH_USER, else the local username)"`
+	LocalUser string   `json:"local_user,omitempty" jsonschema:"description:Local username sent to the remote, which must trust it (optional, defaults to RSH_LOCAL_USER, else the current user)"`
 	Paths     []string `json:"paths" jsonschema:"description:Local files to copy (absolute paths). Folders need recursive"`
 	To        string   `json:"to" jsonschema:"description:Remote folder to copy them into. For one file it may also be the new file name"`
 	Recursive bool     `json:"recursive,omitempty" jsonschema:"description:Copy folders with everything in them (optional)"`
@@ -158,6 +164,41 @@ func portString(v any) string {
 	return fmt.Sprint(v)
 }
 
+func envDefault(v *string, name string) {
+	if *v == "" {
+		*v = os.Getenv(name)
+	}
+}
+
+// resolveDefaults fills host, user and local_user from the environment and
+// returns the port to use.
+func resolveDefaults(host, user, localUser *string, port any) (string, error) {
+	envDefault(host, "RSH_HOST")
+	envDefault(user, "RSH_USER")
+	envDefault(localUser, "RSH_LOCAL_USER")
+	p := portString(port)
+	if e := os.Getenv("RSH_PORT"); e != "" && portUnset(port) {
+		p = e
+	}
+	if *host == "" {
+		return "", errors.New("host is required (or set RSH_HOST)")
+	}
+	return p, nil
+}
+
+func portUnset(port any) bool {
+	switch v := port.(type) {
+	case nil:
+		return true
+	case string:
+		return v == ""
+	case float64:
+		return v == 514
+	default:
+		return portString(port) == "514"
+	}
+}
+
 func main() {
 	flag.DurationVar(&rcmd.IdleTimeout, "idle-timeout", rcmd.IdleTimeout, "close connection after this much remote silence")
 	flag.BoolVar(&rcmd.RequirePrivilegedPort, "require-privileged-port", rcmd.RequirePrivilegedPort, "fail when no reserved source port can be bound, instead of using an unprivileged one (or RSH_REQUIRE_PRIVPORT=1)")
@@ -178,7 +219,11 @@ func newServer() *mcp.Server {
 		Name:        "exec",
 		Description: "Execute command remotely via RSH protocol. Returns its output (stdout and stderr) and its exit status",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args ExecArgs) (*mcp.CallToolResult, any, error) {
-		port := portString(args.Port)
+		port, err := resolveDefaults(&args.Host, &args.User, &args.LocalUser, args.Port)
+		if err != nil {
+			return textResult(err.Error(), true), nil, nil
+		}
+		envDefault(&args.Shell, "RSH_SHELL")
 		if args.MaxLines <= 0 {
 			args.MaxLines = 1000
 		}
@@ -187,11 +232,12 @@ func newServer() *mcp.Server {
 		}
 
 		res, err := rsh.Execute(ctx, rsh.Options{
-			Host:     args.Host,
-			User:     args.User,
-			Port:     port,
-			Command:  args.Command,
-			Shell:    args.Shell,
+			Host:      args.Host,
+			User:      args.User,
+			LocalUser: args.LocalUser,
+			Port:      port,
+			Command:   args.Command,
+			Shell:     args.Shell,
 			Timeout:  time.Duration(args.Timeout) * time.Second,
 			Grep:     args.Grep,
 			MaxLines: args.MaxLines,
@@ -208,13 +254,16 @@ func newServer() *mcp.Server {
 		Name:        "read",
 		Description: "Read file from remote host via RCP protocol",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args ReadFileArgs) (*mcp.CallToolResult, any, error) {
-		port := portString(args.Port)
+		port, err := resolveDefaults(&args.Host, &args.User, &args.LocalUser, args.Port)
+		if err != nil {
+			return textResult(err.Error(), true), nil, nil
+		}
 
 		if args.Encoding != "" && args.Encoding != "text" && args.Encoding != "base64" {
 			return textResult("encoding must be text or base64", true), nil, nil
 		}
 
-		content, err := rcp.ReadFile(args.Host, args.User, args.Path, port)
+		content, err := rcp.ReadFile(args.Host, args.User, args.LocalUser, args.Path, port)
 		if err != nil {
 			return textResult("RCP read failed: "+err.Error(), true), nil, nil
 		}
@@ -231,7 +280,10 @@ func newServer() *mcp.Server {
 		Name:        "write",
 		Description: "Write file to remote host via RCP protocol",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args WriteFileArgs) (*mcp.CallToolResult, any, error) {
-		port := portString(args.Port)
+		port, err := resolveDefaults(&args.Host, &args.User, &args.LocalUser, args.Port)
+		if err != nil {
+			return textResult(err.Error(), true), nil, nil
+		}
 
 		content := []byte(args.Content)
 		if args.ContentBase64 != "" {
@@ -251,8 +303,7 @@ func newServer() *mcp.Server {
 			}
 		}
 
-		err := rcp.WriteFile(args.Host, args.User, args.Path, port, content, os.FileMode(mode))
-		if err != nil {
+		if err := rcp.WriteFile(args.Host, args.User, args.LocalUser, args.Path, port, content, os.FileMode(mode)); err != nil {
 			return textResult("RCP write failed: "+err.Error(), true), nil, nil
 		}
 		return textResult(fmt.Sprintf("File written successfully, %d bytes", len(content)), false), nil, nil
@@ -262,12 +313,16 @@ func newServer() *mcp.Server {
 		Name:        "download",
 		Description: "Copy files from a remote host to a local folder via RCP protocol: many at once, binary files too",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args DownloadArgs) (*mcp.CallToolResult, any, error) {
-		port := portString(args.Port)
+		port, err := resolveDefaults(&args.Host, &args.User, &args.LocalUser, args.Port)
+		if err != nil {
+			return textResult(err.Error(), true), nil, nil
+		}
+		envDefault(&args.Shell, "RSH_SHELL")
 		if len(args.Paths) == 0 || args.To == "" {
 			return textResult("download needs paths and to", true), nil, nil
 		}
 
-		rep, err := rcp.Download(ctx, args.Host, args.User, port, args.Paths, args.To, args.Recursive, args.Shell == "login")
+		rep, err := rcp.Download(ctx, args.Host, args.User, args.LocalUser, port, args.Paths, args.To, args.Recursive, args.Shell == "login")
 		return copyResult("download", "downloaded", rep, err), nil, nil
 	})
 
@@ -275,12 +330,16 @@ func newServer() *mcp.Server {
 		Name:        "upload",
 		Description: "Copy local files to a remote host via RCP protocol: many at once, binary files too",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args UploadArgs) (*mcp.CallToolResult, any, error) {
-		port := portString(args.Port)
+		port, err := resolveDefaults(&args.Host, &args.User, &args.LocalUser, args.Port)
+		if err != nil {
+			return textResult(err.Error(), true), nil, nil
+		}
+		envDefault(&args.Shell, "RSH_SHELL")
 		if len(args.Paths) == 0 || args.To == "" {
 			return textResult("upload needs paths and to", true), nil, nil
 		}
 
-		rep, err := rcp.Upload(ctx, args.Host, args.User, port, args.Paths, args.To, args.Recursive, args.Shell == "login")
+		rep, err := rcp.Upload(ctx, args.Host, args.User, args.LocalUser, port, args.Paths, args.To, args.Recursive, args.Shell == "login")
 		return copyResult("upload", "uploaded", rep, err), nil, nil
 	})
 

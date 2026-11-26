@@ -58,7 +58,7 @@ func TestDownloadAsksForEachPathOnItsOwnForNTTakesTheRestOfTheLineAsOnePath(t *t
 	}
 	paths := []string{want["ntrshd.log"], want["read me.txt"]}
 
-	rep, err := Download(context.Background(), "127.0.0.1", "", port, paths, dir, false, false)
+	rep, err := Download(context.Background(), "127.0.0.1", "", "", port, paths, dir, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +158,7 @@ func TestDownloadQuoting(t *testing.T) {
 	} {
 		port, reqs := fakeRshd(t, serveFile("A.TXT", "abc"))
 		dir := t.TempDir()
-		rep, err := Download(context.Background(), "127.0.0.1", "u", port, []string{spec}, dir, false, tc.login)
+		rep, err := Download(context.Background(), "127.0.0.1", "u", "", port, []string{spec}, dir, false, tc.login)
 		if err != nil || len(rep.Files) != 1 {
 			t.Fatalf("login %v: %v %+v", tc.login, err, rep)
 		}
@@ -173,7 +173,7 @@ func TestDownloadQuoting(t *testing.T) {
 
 func TestDownloadLoginOneSessionPerPath(t *testing.T) {
 	port, reqs := fakeRshd(t, serveFile("A.TXT", "abc"))
-	rep, err := Download(context.Background(), "127.0.0.1", "u", port, []string{"[D]A.TXT", "[D]*.COM"}, t.TempDir(), false, true)
+	rep, err := Download(context.Background(), "127.0.0.1", "u", "", port, []string{"[D]A.TXT", "[D]*.COM"}, t.TempDir(), false, true)
 	if err != nil || len(rep.Files) != 2 {
 		t.Fatalf("%v %+v", err, rep)
 	}
@@ -202,7 +202,7 @@ func TestUploadLoginOneSessionPerFile(t *testing.T) {
 		{"[D]NEW.TXT;", paths[:1], []string{"rcp -t [D]NEW.TXT;"}},
 	} {
 		port, reqs := fakeRshd(t, sinkFile)
-		rep, err := Upload(context.Background(), "127.0.0.1", "u", port, tc.paths, tc.to, false, true)
+		rep, err := Upload(context.Background(), "127.0.0.1", "u", "", port, tc.paths, tc.to, false, true)
 		if err != nil || len(rep.Files) != len(tc.paths) || len(rep.Errors) > 0 {
 			t.Fatalf("to %s: %v %+v", tc.to, err, rep)
 		}
@@ -217,7 +217,7 @@ func TestUploadShQuoting(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "a.txt")
 	os.WriteFile(p, []byte("a"), 0644)
 	port, reqs := fakeRshd(t, sinkFile)
-	if _, err := Upload(context.Background(), "127.0.0.1", "u", port, []string{p}, "my dir", false, false); err != nil {
+	if _, err := Upload(context.Background(), "127.0.0.1", "u", "", port, []string{p}, "my dir", false, false); err != nil {
 		t.Fatal(err)
 	}
 	if got := (<-reqs).Command; got != "rcp -t 'my dir'" {

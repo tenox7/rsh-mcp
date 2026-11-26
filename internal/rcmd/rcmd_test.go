@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"net"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -13,12 +14,16 @@ import (
 // unprivileged skips the test where this process may bind reserved ports.
 func unprivileged(t *testing.T) {
 	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:1023")
+	if runtime.GOOS == "darwin" {
+		t.Skip("reserved-port binding policy differs on macOS")
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:512")
 	if err == nil {
 		ln.Close()
-	}
-	if !errors.Is(err, syscall.EACCES) {
 		t.Skip("this process may bind reserved ports")
+	}
+	if !errors.Is(err, syscall.EACCES) && !errors.Is(err, syscall.EPERM) {
+		t.Skip("cannot tell whether reserved ports bind here")
 	}
 }
 

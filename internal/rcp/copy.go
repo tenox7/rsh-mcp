@@ -30,7 +30,7 @@ type Report struct {
 // an NT rshd takes the whole rest of the command line as one path.
 // With login, paths are sent as given (OpenVMS file specs) and errors on
 // one path do not stop the rest.
-func Download(ctx context.Context, hostname, username, port string, paths []string, localDir string, recursive, login bool) (*Report, error) {
+func Download(ctx context.Context, hostname, username, localUser, port string, paths []string, localDir string, recursive, login bool) (*Report, error) {
 	if err := os.MkdirAll(localDir, 0755); err != nil {
 		return nil, err
 	}
@@ -39,7 +39,7 @@ func Download(ctx context.Context, hostname, username, port string, paths []stri
 		if ctx.Err() != nil {
 			return rep, errCancelled
 		}
-		if err := fetch(ctx, hostname, username, port, sourceCommand(path, recursive, login), localDir, rep); err != nil {
+		if err := fetch(ctx, hostname, username, localUser, port, sourceCommand(path, recursive, login), localDir, rep); err != nil {
 			if login && len(paths) > 1 {
 				rep.Errors = append(rep.Errors, path+": "+err.Error())
 				continue
@@ -50,8 +50,8 @@ func Download(ctx context.Context, hostname, username, port string, paths []stri
 	return rep, nil
 }
 
-func fetch(ctx context.Context, hostname, username, port, command, localDir string, rep *Report) error {
-	conn, r, err := open(hostname, username, port, command)
+func fetch(ctx context.Context, hostname, username, localUser, port, command, localDir string, rep *Report) error {
+	conn, r, err := open(hostname, username, localUser, port, command)
 	if err != nil {
 		return err
 	}
@@ -136,9 +136,9 @@ func receive(conn net.Conn, r *bufio.Reader, path string, mode os.FileMode, size
 // /bin/sh, such as OpenVMS) the target is sent as given and each file gets
 // its own rcp session with its full target name, since OpenVMS rcp rejects
 // "rcp -t -d" as an ambiguous target. Folders can not be copied that way.
-func Upload(ctx context.Context, hostname, username, port string, paths []string, remoteTarget string, recursive, login bool) (*Report, error) {
+func Upload(ctx context.Context, hostname, username, localUser, port string, paths []string, remoteTarget string, recursive, login bool) (*Report, error) {
 	if !login {
-		return upload(ctx, hostname, username, port, paths, remoteTarget, recursive, false)
+		return upload(ctx, hostname, username, localUser, port, paths, remoteTarget, recursive, false)
 	}
 	toDir := len(paths) > 1 || strings.ContainsAny(remoteTarget[len(remoteTarget)-1:], "/]>:")
 	all := &Report{}
@@ -156,7 +156,7 @@ func Upload(ctx context.Context, hostname, username, port string, paths []string
 		if toDir {
 			target = join(remoteTarget, filepath.Base(p))
 		}
-		rep, err := upload(ctx, hostname, username, port, []string{p}, target, false, true)
+		rep, err := upload(ctx, hostname, username, localUser, port, []string{p}, target, false, true)
 		merge(all, rep, p, err)
 		if ctx.Err() != nil {
 			return all, errors.New("cancelled")
@@ -184,7 +184,7 @@ func join(dir, name string) string {
 	return dir + "/" + name
 }
 
-func upload(ctx context.Context, hostname, username, port string, paths []string, remoteTarget string, recursive, login bool) (*Report, error) {
+func upload(ctx context.Context, hostname, username, localUser, port string, paths []string, remoteTarget string, recursive, login bool) (*Report, error) {
 	toDir := len(paths) > 1
 	for _, p := range paths {
 		st, err := os.Stat(p)
@@ -197,7 +197,7 @@ func upload(ctx context.Context, hostname, username, port string, paths []string
 		toDir = toDir || st.IsDir()
 	}
 	command := sinkCommand(remoteTarget, toDir, recursive, login)
-	conn, r, err := open(hostname, username, port, command)
+	conn, r, err := open(hostname, username, localUser, port, command)
 	if err != nil {
 		return nil, err
 	}
@@ -279,13 +279,10 @@ func sendDir(conn net.Conn, r *bufio.Reader, path string, st os.FileInfo, rep *R
 	return rcmd.ReadAck(r)
 }
 
-func open(hostname, username, port, command string) (net.Conn, *bufio.Reader, error) {
-	localUser, err := rcmd.LocalUser()
+func open(hostname, username, localUser, port, command string) (net.Conn, *bufio.Reader, error) {
+	username, localUser, err := users(username, localUser)
 	if err != nil {
 		return nil, nil, err
-	}
-	if username == "" {
-		username = localUser
 	}
 	conn, err := rcmd.Dial(hostname, port)
 	if err != nil {
