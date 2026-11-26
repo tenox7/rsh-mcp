@@ -94,6 +94,7 @@ Write a file to a remote host via RCP.
 
 - `-idle-timeout` - drop the connection after this much silence from the remote (default `5m`), e.g. `claude mcp add rsh-mcp -- go run github.com/tenox7/rsh-mcp@latest -idle-timeout 15m`
 - `-require-privileged-port` - fail at once when no source port below 1024 can be bound, instead of trying an unprivileged one (also `RSH_REQUIRE_PRIVPORT=1`)
+- `-log-dir` - append one line per operation to `rsh_transfers.log` in this folder (also `RSH_LOG_DIR`; off by default): time, tool, host, port, users, command or paths, bytes, SHA-256, exit status, duration and any error
 
 ## Environment
 
