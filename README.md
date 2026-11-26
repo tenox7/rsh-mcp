@@ -33,7 +33,7 @@ Execute a command on a remote host via RSH. Returns its output (stdout and stder
 
 With `shell` `sh`, the command is sent as a script to `/bin/sh` on its standard input, so the login shell (sh, ksh, csh) never parses it. Quotes, `!`, comments and here-documents work the same everywhere, the command reads `/dev/null` as its input, and the exit status comes back. Windows NT has no `/bin/sh`, but [ntrshd](https://github.com/tenox7/ntrshd) 1.2 and later read that script themselves: they run the command with `cmd /c` (several lines become one command line, joined with `&`) and send the exit status back the same way, so `exec` needs no options there either. An older NT rshd answers that it doesn't know `sh`; then nothing runs and `exec` says so. `login` passes the command to the login shell as it is, with no exit status: use it for other hosts without `/bin/sh`, or an older NT rshd.
 
-Output comes back with plain newlines: CRLF line ends become LF, so `grep` works the same on NT output.
+Output comes back with plain newlines: CR LF line ends become LF, as do the CR CR LF and final bare CR that OpenVMS DCL sends, so `grep` works the same everywhere.
 
 `grep` filters here, not on the remote host, so it works with old tools and saves output.
 

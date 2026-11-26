@@ -26,6 +26,10 @@ const scriptCommand = "sh -s rsh-mcp-1"
 
 const cmdExeNotFound = "internal or external command"
 
+// lineEnd matches a line end with any carriage returns before it: CR LF
+// from Windows NT, and CR CR LF or a final bare CR from OpenVMS DCL.
+var lineEnd = regexp.MustCompile("\r+(\n|\\z)")
+
 type Options struct {
 	Host     string
 	User     string
@@ -96,7 +100,7 @@ func Execute(ctx context.Context, o Options) (*Result, error) {
 	if ctx.Err() != nil {
 		return nil, errors.New("cancelled")
 	}
-	output = bytes.ReplaceAll(output, []byte("\r\n"), []byte("\n"))
+	output = lineEnd.ReplaceAll(output, []byte("\n"))
 
 	res := &Result{ExitStatus: ExitUnknown, TimedOut: timedOut}
 	if viaSh {
