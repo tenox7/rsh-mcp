@@ -101,7 +101,8 @@ func SendRequest(conn net.Conn, localUser, remoteUser, command string) error {
 }
 
 // ReadAck reads one rcmd status byte: 0 is success, anything else is
-// followed by an error message line.
+// followed by an error message line. OpenVMS sends its messages, such as
+// %RCP-E-OPENIN, with no status byte, so their % is kept.
 func ReadAck(r *bufio.Reader) error {
 	b, err := r.ReadByte()
 	if err == io.EOF {
@@ -115,6 +116,9 @@ func ReadAck(r *bufio.Reader) error {
 	}
 	msg, _ := r.ReadString('\n')
 	msg = strings.TrimSpace(msg)
+	if b == '%' {
+		msg = "%" + msg
+	}
 	if msg == "" {
 		return fmt.Errorf("remote error (status %d)", b)
 	}

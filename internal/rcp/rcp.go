@@ -49,6 +49,9 @@ func ReadFile(hostname, username, remotePath, port string) ([]byte, error) {
 	if line[0] == 1 || line[0] == 2 {
 		return nil, errors.New(strings.TrimSpace(line[1:]))
 	}
+	if line[0] == '%' {
+		return nil, errors.New(strings.TrimSpace(line))
+	}
 	if line[0] != 'C' {
 		return nil, fmt.Errorf("unexpected rcp control message: %q", strings.TrimSpace(line))
 	}

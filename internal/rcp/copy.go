@@ -68,6 +68,9 @@ func fetch(ctx context.Context, hostname, username, port, command, localDir stri
 		case 1:
 			rep.Errors = append(rep.Errors, strings.TrimSpace(line[1:]))
 			continue
+		case '%':
+			rep.Errors = append(rep.Errors, strings.TrimSpace(line))
+			continue
 		case 2:
 			return errors.New(strings.TrimSpace(line[1:]))
 		case 'T':
