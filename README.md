@@ -81,12 +81,13 @@ Write a file to a remote host via RCP.
 ## Flags
 
 - `-idle-timeout` - drop the connection after this much silence from the remote (default `5m`), e.g. `claude mcp add rsh-mcp -- go run github.com/tenox7/rsh-mcp@latest -idle-timeout 15m`
+- `-require-privileged-port` - fail at once when no source port below 1024 can be bound, instead of trying an unprivileged one (also `RSH_REQUIRE_PRIVPORT=1`)
 
 ## Notes
 
 **File editing:** rsh-mcp provides read/write via RCP copy in/out. For effective editing, work locally then copy over with upload, or mount workspace via NFS/SMB.
 
-**Privileged port:** Some RSH/RCP servers require source port <1024. This client does that but may require elevated privileges on some systems.
+**Privileged port:** Most RSH/RCP servers only answer a client on a source port below 1024. This client uses one when it may bind it; otherwise it falls back to an unprivileged port, and if the server then hangs up the error says so and how to fix it. On Linux, `make install` builds the binary into `$(go env GOPATH)/bin` and gives it the `cap_net_bind_service` capability with `sudo setcap cap_net_bind_service=+ep`; run it again after each rebuild, since a new binary does not have the capability (and `go run` builds a new one every time). Then register the installed binary, e.g. `claude mcp add -s user rsh-mcp -- ~/go/bin/rsh-mcp`.
 
 **Windows NT:** If you need an RSH/RCP server for Windows NT check out [NTRSHD](https://github.com/tenox7/ntrshd)
 
