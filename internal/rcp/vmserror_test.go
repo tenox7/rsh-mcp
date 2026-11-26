@@ -21,7 +21,7 @@ func vmsSource(_ rcmdRequest, r *bufio.Reader, conn net.Conn) {
 
 func TestDownloadVMSError(t *testing.T) {
 	port, _ := fakeRshd(t, vmsSource)
-	rep, err := Download(context.Background(), "127.0.0.1", "u", port, []string{"NONE.TXT"}, t.TempDir(), false)
+	rep, err := Download(context.Background(), "127.0.0.1", "u", port, []string{"NONE.TXT"}, t.TempDir(), false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +56,7 @@ func TestUploadVMSError(t *testing.T) {
 	port, _ := fakeRshd(t, func(_ rcmdRequest, r *bufio.Reader, conn net.Conn) {
 		io.WriteString(conn, "%RCP-E-OPENOUT, error opening [NODIR] as output\n")
 	})
-	_, err := Upload(context.Background(), "127.0.0.1", "u", port, []string{p}, "[NODIR]", false)
+	_, err := Upload(context.Background(), "127.0.0.1", "u", port, []string{p}, "[NODIR]", false, false)
 	if err == nil || !strings.Contains(err.Error(), "%RCP-E-OPENOUT") {
 		t.Errorf("error %v, want the OpenVMS message", err)
 	}
